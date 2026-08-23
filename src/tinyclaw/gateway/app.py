@@ -785,7 +785,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 def main() -> None:
     settings = Settings(service_name="tinyclaw-gateway")
     app = create_app(settings)
-    uvicorn.run(app, host="127.0.0.1", port=9100, log_level="info")
+    # TINYCLAW_HOST=0.0.0.0 exposes the dashboard on the LAN — run it that way
+    # to use tinyclaw from a phone (http://<your-ip>:9100).
+    uvicorn.run(app, host=os.environ.get("TINYCLAW_HOST", "127.0.0.1"), port=9100, log_level="info")
 
 
 if __name__ == "__main__":

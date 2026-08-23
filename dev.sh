@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # tinyclaw local dev: gateway + all procurement agents + runtime, seeded demo.
 #
-#   ./dev.sh              # start everything (mock LLM, zero keys)
-#   ./dev.sh --no-seed    # start without seeding demo requests
+#   ./dev.sh                       # start everything (mock LLM, zero keys)
+#   ./dev.sh --no-seed             # start without seeding demo requests
+#   TINYCLAW_HOST=0.0.0.0 ./dev.sh # expose on the LAN — use from your phone
+#                                   # at http://<your-mac-ip>:9100 (dashboard
+#                                   # is fully responsive)
 #
 # Dashboard: http://127.0.0.1:9100   (Approvals tab has parked decisions waiting)
 set -euo pipefail

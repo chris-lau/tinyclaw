@@ -1,4 +1,8 @@
-const BASE = (import.meta as any).env?.VITE_GATEWAY ?? "http://127.0.0.1:9100";
+// Same-origin by default in the built bundle (served by the gateway — works
+// from any device that can reach the host, e.g. a phone on the LAN). The
+// Vite dev server talks to the local gateway explicitly.
+const BASE =
+  (import.meta as any).env?.VITE_GATEWAY ?? ((import.meta as any).DEV ? "http://127.0.0.1:9100" : "");
 
 async function j<T = any>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${BASE}${path}`, {

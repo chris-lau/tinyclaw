@@ -65,7 +65,7 @@ export default function App() {
           ))}
         </div>
         <div className="nr">
-          <div className="pill" title="Autonomy dial — rewrites tier-rule effects; tier 3 and denies are never relaxed">
+          <div className="pill pill-posture" title="Autonomy dial — rewrites tier-rule effects; tier 3 and denies are never relaxed">
             Autonomy:&nbsp;
             <select
               value={posture}
@@ -77,10 +77,10 @@ export default function App() {
               <option value="full">full autonomy</option>
             </select>
           </div>
-          <div className="pill">
+          <div className="pill pill-scenario">
             Scenario: <b>{health?.scenarios?.[0] ?? "—"}</b>
           </div>
-          <div className="pill">
+          <div className="pill pill-llm">
             {health?.llm ?? "…"} {health?.llm === "mock" ? "· mock mode" : ""}
           </div>
           <div className="av">CL</div>

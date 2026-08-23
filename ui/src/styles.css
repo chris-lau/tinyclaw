@@ -208,3 +208,85 @@ body {
 
 .empty { color: var(--faint); font-size: 12.5px; padding: 30px; text-align: center; }
 a { color: var(--intake); }
+
+/* =====================================================================
+   Responsive (mobile) — the desktop design above is untouched; these
+   breakpoints reflow it for tablets and phones. Pipelines become
+   swipeable, sidebars stack, actions go full-width.
+   ===================================================================== */
+
+/* Tablets: two KPI columns, stacked main columns */
+@media (max-width: 1100px) {
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+  .main2 { flex-direction: column; }
+  .side { width: auto; flex-direction: row; }
+  .feed { max-height: 300px; }
+  .tdetail { flex-direction: column; }
+  .rrail { width: auto; }
+  .gv-grid, .pg-grid { grid-template-columns: 1fr; }
+  .stbody { flex-direction: column; }
+  .form, .stside { flex: none; width: 100%; }
+}
+
+/* Phones: wrapped nav, swipeable pipeline, compact task rows */
+@media (max-width: 860px) {
+  .topnav { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 6px 10px; }
+  .logo { font-size: 14px; }
+  .navlinks { order: 3; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .navlinks::-webkit-scrollbar { display: none; }
+  .nl { white-space: nowrap; padding: 6px 10px; }
+  .nr { gap: 6px; }
+  .pill-scenario, .pill-llm { display: none; }
+
+  .content { padding: 10px 12px 16px; gap: 10px; }
+
+  .kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .kpi { padding: 10px 12px; }
+  .kpi .val { font-size: 21px; }
+
+  /* Pipeline becomes a horizontally swipeable card strip */
+  .stages { display: flex; overflow-x: auto; gap: 8px; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+  .stage { flex: 0 0 46%; min-width: 150px; max-height: 300px; }
+
+  .side { flex-direction: column; gap: 10px; }
+
+  /* Task rows: title+amount+state only; stage/requester/updated collapse away */
+  .trow { grid-template-columns: 1fr auto auto; gap: 8px; padding: 10px 12px; }
+  .trow > :nth-child(3), .trow > :nth-child(5), .trow > :nth-child(6) { display: none; }
+
+  .trow-span { grid-template-columns: 106px 1fr 46px; }
+
+  .ap-wrap { flex-direction: column; }
+  .inbox { width: auto; }
+  .ilist { max-height: 260px; }
+  .sla { margin-left: 0; }
+
+  .st-wrap { flex-direction: column; }
+  .reg { width: auto; }
+  .rl { padding: 8px 12px; }
+  .sttabs { margin-left: 0; }
+
+  /* 16px inputs stop iOS Safari from zooming on focus */
+  .inp, .cmt, .ta, select, input, textarea { font-size: 16px; }
+  .btn { min-height: 44px; }
+  .tool { padding: 6px 10px; }
+}
+
+/* Small phones: single-column KPIs optional kept at 2 (values are short),
+   full-width decision buttons, tighter chrome */
+@media (max-width: 560px) {
+  .stage { flex: 0 0 62%; }
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+  .dact { flex-direction: column; align-items: stretch; }
+  .cmt { width: 100%; min-width: 0; }
+  .btn { width: 100%; text-align: center; }
+  .dnote { width: auto; }
+  .st-act { flex-direction: column; align-items: stretch; }
+  .st-note { min-width: 0; }
+  .dhdr { flex-direction: column; align-items: flex-start; }
+  .thdr { flex-direction: column; align-items: flex-start; }
+  .table-hdr { flex-direction: column; align-items: flex-start; }
+  .msg { gap: 8px; }
+  .ava { width: 26px; height: 26px; font-size: 10px; }
+  .kv .k { width: 96px; }
+}

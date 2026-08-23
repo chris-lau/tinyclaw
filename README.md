@@ -75,6 +75,21 @@ TINYCLAW_LLM_PROVIDER=openai  OPENAI_API_KEY=sk-…  ./dev.sh
 TINYCLAW_LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=… ./dev.sh
 ```
 
+## Mobile
+
+The dashboard is fully responsive — approve from your phone:
+
+```bash
+TINYCLAW_HOST=0.0.0.0 ./dev.sh
+# then open http://<your-mac-ip>:9100 on the same Wi-Fi
+```
+
+On small screens the nav wraps, the live pipeline becomes a swipeable card
+strip, task rows collapse to essentials, and approval actions go full-width
+with 44px touch targets. The built UI talks to the gateway same-origin, so
+any device that can reach the host works. (LAN exposure is for local demos —
+don't run a 0.0.0.0 binding on an untrusted network.)
+
 ## Docker (one command, observability optional)
 
 ```bash
