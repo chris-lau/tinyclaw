@@ -1,0 +1,22 @@
+# Boundary hooks (Phase 2) — enforced by the gateway's policy decision point
+# and applied by the tinyclaw A2A client before ANY message leaves an agent.
+#
+# Context fields available to `when`: from_agent, to_agent, text, data.*
+hooks:
+  - id: injection.boundary
+    description: Refuse outbound messages carrying prompt-injection patterns — untrusted text never crosses into another agent
+    on: a2a.send
+    when: {path: text, op: matches, value: "(ignore|disregard)[a-z ]{0,30}(instructions|prompts|rules)|you are now|reveal (your|the) (instructions|prompt)"}
+    effect: block
+
+  - id: pii.card.boundary
+    description: Mask raw card numbers found in any outbound message or payload field
+    on: a2a.send
+    when: {path: text, op: matches, value: "\\b(?:\\d[ -]?){13,19}\\b"}
+    effect: redact
+
+  - id: pii.email.boundary
+    description: Mask email addresses crossing the agent boundary
+    on: a2a.send
+    when: {path: text, op: matches, value: "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"}
+    effect: redact

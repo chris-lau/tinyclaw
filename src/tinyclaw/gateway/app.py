@@ -62,11 +62,29 @@ def load_scenarios() -> dict[str, dict[str, Any]]:
 
 class GatewayState:
     def __init__(self, settings: Settings) -> None:
+        from ..core.governance.hooks import HookEngine
+
+        self._hook_engine_cls = HookEngine
         self.settings = settings
         self.db = Database(settings.database_path)
         self.subscribers: list[asyncio.Queue[dict[str, Any]]] = []
         self.scenarios = load_scenarios()
         self.callers: dict[str, A2ACaller] = {}
+        # Boundary hooks (Phase 2): every scenario pack may ship hooks.yaml;
+        # the gateway evaluates them, the A2A clients enforce them.
+        self.hooks: list[HookEngine] = []
+        for scen in self.scenarios.values():
+            for rel in scen.get("policies", []):
+                path = scen["dir"] / rel
+                if path.name == "hooks.yaml" and path.exists():
+                    self.hooks.append(HookEngine.from_yaml(path))
+
+    def hook_engine(self):
+        """All pack hooks merged (evaluated in declaration order)."""
+        return self._hook_engine_cls([h for engine in self.hooks for h in engine.hooks])
+
+    def posture(self) -> str:
+        return self.db.kv_get("posture", "balanced") or "balanced"
 
     def caller(self, url: str) -> A2ACaller:
         if url not in self.callers:
@@ -261,6 +279,95 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "scenarios": list(gw().scenarios),
             "llm": settings.llm_provider,
             "otlp": bool(settings.otlp_endpoint),
+            "posture": gw().posture(),
+        }
+
+    # ------------------------------------------------ autonomy dial (Phase 2)
+
+    @app.get("/api/posture")
+    async def get_posture() -> dict[str, Any]:
+        p = gw().posture()
+        meaning = {
+            "conservative": "tier-1 allowances become human approvals — agents propose, humans decide",
+            "balanced": "the policy set as written (tier 1 auto, tier 2+ human)",
+            "full": "tier-2 approvals become autonomous — tier 3 and all denies are never relaxed",
+        }
+        return {"posture": p, "description": meaning[p]}
+
+    @app.post("/api/posture")
+    async def set_posture(body: dict[str, Any]) -> dict[str, Any]:
+        from ..core.governance.policy import POSTURES
+
+        p = body.get("posture")
+        if p not in POSTURES:
+            raise HTTPException(422, f"posture must be one of {list(POSTURES)}")
+        old = gw().posture()
+        gw().db.kv_set("posture", p)
+        await gw().audit("human:dashboard", "posture.change", "autonomy-dial", p, previous=old)
+        await gw().broadcast(
+            {
+                "id": uuid.uuid4().hex[:8],
+                "ts": time.time(),
+                "type": "posture.changed",
+                "agent": "gateway",
+                "data": {"posture": p, "previous": old},
+            }
+        )
+        return {"posture": p, "previous": old}
+
+    # --------------------------------------------- boundary hooks (Phase 2)
+
+    @app.post("/internal/hooks/eval")
+    async def hooks_eval(request: Request) -> dict[str, Any]:
+        """Policy decision point for outbound A2A messages.
+
+        The tinyclaw A2A client in every agent calls this before sending;
+        the returned decision is enforced client-side (block/redact).
+        Fail-open on gateway errors is a deliberate, documented trade-off —
+        the LLM-boundary guardrails inside agents remain the inner defense.
+        """
+        if not authorized(request):
+            raise HTTPException(401, "bad internal token")
+        b = await request.json()
+        decision = gw().hook_engine().evaluate(b.get("text", ""), b.get("data") or {})
+        task_id = b.get("task_id")
+        if decision.action == "block":
+            hook = decision.annotations[0]["hook"] if decision.annotations else "unknown"
+            await gw().audit(
+                "hook",
+                "hook.blocked",
+                task_id or "boundary",
+                "block",
+                hook=hook,
+                from_agent=b.get("from_agent"),
+                to_agent=b.get("to_agent"),
+            )
+            await gw().broadcast(
+                {
+                    "id": uuid.uuid4().hex[:8],
+                    "ts": time.time(),
+                    "type": "hook.blocked",
+                    "agent": b.get("from_agent") or "boundary",
+                    "task_id": task_id,
+                    "data": {"hook": hook, "to": b.get("to_agent"), "text": (b.get("text") or "")[:120]},
+                }
+            )
+        elif decision.action == "redact":
+            await gw().broadcast(
+                {
+                    "id": uuid.uuid4().hex[:8],
+                    "ts": time.time(),
+                    "type": "hook.redacted",
+                    "agent": b.get("from_agent") or "boundary",
+                    "task_id": task_id,
+                    "data": {"to": b.get("to_agent"), "annotations": decision.annotations},
+                }
+            )
+        return {
+            "action": decision.action,
+            "text": decision.text,
+            "data": decision.data,
+            "annotations": decision.annotations,
         }
 
     @app.get("/api/scenarios")

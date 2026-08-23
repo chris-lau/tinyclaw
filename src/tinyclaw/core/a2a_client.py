@@ -1,15 +1,19 @@
-"""A2A client helper with W3C tracecontext propagation.
+"""A2A client helper with W3C tracecontext propagation + boundary enforcement.
 
 Every tinyclaw agent-to-agent call goes through this class so that:
 
 * the remote Agent Card is discovered properly (``/.well-known/agent-card.json``),
 * the current span's ``traceparent`` rides in message metadata → one
   distributed trace across the whole agent chain,
-* the final task state and artifacts are collected into a simple result.
+* the final task state and artifacts are collected into a simple result,
+* when wired to the gateway (Phase 2), the outbound message passes the
+  boundary-hook policy decision point first: ``block`` raises, ``redact``
+  masks PII in text and every payload field before anything is sent.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -19,6 +23,17 @@ from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
 from a2a.types import AgentCard, DataPart, Message, Part, Role, Task, TextPart
 
 from .observability import tracing
+
+log = logging.getLogger("tinyclaw.a2a")
+
+
+class HookBlockedError(Exception):
+    """A boundary hook refused this outbound message."""
+
+    def __init__(self, hook: str, detail: str = "") -> None:
+        self.hook = hook
+        self.detail = detail
+        super().__init__(f"blocked at boundary by hook {hook!r}: {detail}")
 
 
 @dataclass
@@ -40,17 +55,68 @@ class SendResult:
 class A2ACaller:
     """Thin, cached wrapper over the a2a-sdk client for agent-to-agent calls."""
 
-    def __init__(self, base_url: str, httpx_client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        httpx_client: httpx.AsyncClient | None = None,
+        settings: Any = None,
+        caller_name: str = "",
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self._http = httpx_client or httpx.AsyncClient(timeout=30.0)
         self._card: AgentCard | None = None
         self._factory = ClientFactory(ClientConfig(streaming=False, httpx_client=self._http))
+        self._settings = settings
+        self._caller_name = caller_name
+        self._hook_http: httpx.AsyncClient | None = None
+        if settings is not None:
+            self._hook_http = httpx.AsyncClient(
+                base_url=settings.gateway_url,
+                headers={"authorization": f"Bearer {settings.internal_token}"},
+                timeout=5.0,
+            )
 
     async def card(self) -> AgentCard:
         if self._card is None:
             resolver = A2ACardResolver(httpx_client=self._http, base_url=self.base_url)
             self._card = await resolver.get_agent_card()
         return self._card
+
+    async def _enforce_hooks(
+        self, text: str, data: dict[str, Any] | None, task_id: str | None
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Consult the gateway's hook policy before anything leaves."""
+        if self._hook_http is None:
+            return text, data
+        to_agent = ""
+        try:
+            to_agent = (await self.card()).name
+        except Exception:
+            pass
+        try:
+            r = await self._hook_http.post(
+                "/internal/hooks/eval",
+                json={
+                    "from_agent": self._caller_name,
+                    "to_agent": to_agent,
+                    "text": text,
+                    "data": data or {},
+                    "task_id": task_id,
+                },
+            )
+            r.raise_for_status()
+            decision = r.json()
+        except Exception:
+            # Fail-open is deliberate and documented: the in-agent guardrails
+            # (PII redaction pre-LLM) remain the inner defense line.
+            log.debug("hook evaluation unavailable; sending unfiltered (fail-open)", exc_info=True)
+            return text, data
+        if decision.get("action") == "block":
+            hook = (decision.get("annotations") or [{}])[0].get("hook", "unknown")
+            raise HookBlockedError(hook, f"message to {to_agent or 'agent'} refused")
+        if decision.get("action") == "redact":
+            return decision.get("text", text), decision.get("data", data)
+        return text, data
 
     async def send_text(
         self,
@@ -60,8 +126,16 @@ class A2ACaller:
         metadata: dict[str, Any] | None = None,
         task_id: str | None = None,
         context_id: str | None = None,
+        hook_task_id: str | None = None,
     ) -> SendResult:
-        """Send one message (non-streaming) and drain the event iterator."""
+        """Send one message (non-streaming) and drain the event iterator.
+
+        ``task_id`` continues an existing task on the receiving agent (resume).
+        ``hook_task_id`` is business-task attribution for boundary-hook events
+        only — it never enters the protocol message (specialists don't know
+        the orchestrator's task id).
+        """
+        text, data = await self._enforce_hooks(text, data, hook_task_id or task_id)
         parts: list[Part] = [Part(root=TextPart(text=text))]
         if data is not None:
             parts.append(Part(root=DataPart(data=data)))

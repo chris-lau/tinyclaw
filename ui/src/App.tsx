@@ -23,17 +23,33 @@ export default function App() {
   const [live, setLive] = useState<any[]>([]);
   const [health, setHealth] = useState<any>(null);
   const [tick, setTick] = useState(0);
+  const [posture, setPosture] = useState<string>("balanced");
 
   const bump = useCallback(() => setTick((t) => t + 1), []);
 
   useEffect(() => {
-    api.health().then(setHealth).catch(() => setHealth(null));
+    api.health().then((h) => {
+      setHealth(h);
+      if (h?.posture) setPosture(h.posture);
+    }).catch(() => setHealth(null));
+    api.posture().then((p) => setPosture(p.posture)).catch(() => {});
     const stop = sse((ev: any) => {
       if (ev?.type && ev.type !== "hello") setLive((l) => [ev, ...l].slice(0, 60));
+      if (ev?.type === "posture.changed") setPosture(ev.data?.posture);
       bump();
     });
     return stop;
   }, [bump]);
+
+  async function changePosture(p: string) {
+    setPosture(p);
+    try {
+      await api.setPosture(p);
+    } catch {
+      /* SSE will correct us if the change failed */
+    }
+    bump();
+  }
 
   return (
     <div className="app">
@@ -49,6 +65,18 @@ export default function App() {
           ))}
         </div>
         <div className="nr">
+          <div className="pill" title="Autonomy dial — rewrites tier-rule effects; tier 3 and denies are never relaxed">
+            Autonomy:&nbsp;
+            <select
+              value={posture}
+              onChange={(e) => changePosture(e.target.value)}
+              style={{ background: "transparent", border: "none", color: "#f59e0b", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+            >
+              <option value="conservative">conservative</option>
+              <option value="balanced">balanced</option>
+              <option value="full">full autonomy</option>
+            </select>
+          </div>
           <div className="pill">
             Scenario: <b>{health?.scenarios?.[0] ?? "—"}</b>
           </div>

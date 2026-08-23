@@ -26,6 +26,9 @@ flowchart LR
 | **Governance** | Policy-as-code engine (YAML rules, most-restrictive-wins, all hits audited), risk registry (`auto`/`threshold`/`always_human`/`blocked`), PII + injection guardrails pre-LLM, hash-chained tamper-evident audit log, agent identities & scopes | `core/governance/` |
 | **Human oversight** | Approval queue backed by the A2A `input-required` state; decisions signed (who/when/comment) and hash-chained | `gateway/app.py`, scenario orchestrators |
 | **Execution authorization** | HMAC-signed permits bound to task + action + TTL. AUTO route: gateway signs after policy pass. HUMAN route: signs only after a recorded human decision. The executor refuses everything else | `core/hitl/tokens.py`, executor agents |
+| **Autonomy dial (P2)** | Three postures — conservative / balanced / full — rewrite tier-rule *effects* (never conditions): tier 3 and all deny rules are posture-proof; changes are audited | `core/governance/policy.py` (`apply_posture`), gateway `/api/posture` |
+| **Durable tasks (P2)** | SQLite `TaskStore` per agent: parked `input-required` tasks survive SIGKILL; the approval queue never orphans | `core/persistence.py` |
+| **Boundary hooks (P2)** | Gateway = policy decision point, the A2A client in every agent = enforcement point; `block` / `redact` / `annotate` on every outbound message; fail-open documented | `core/governance/hooks.py`, `core/a2a_client.py`, pack `hooks.yaml` |
 | **Control plane** | Gateway: single writer of the audit chain, event fan-out (SSE), KPIs, scenario registry, playground, Agent Studio API | `gateway/` |
 | **Agent Studio** | Declarative agents (definition = data), versioned registry, test console, policy dry-run, governed deploy (high-risk definitions route through the same human queue) | `runtime/`, `gateway/app.py` |
 | **Scenario packs** | Pluggable demo scenarios; procurement ships first | `scenarios/procurement/` |

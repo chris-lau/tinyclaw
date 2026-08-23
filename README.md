@@ -8,6 +8,30 @@ control?"* It is small enough to read in an afternoon and structured like a
 real platform: standard protocol, real observability, policy-as-code
 governance, and humans in the loop where risk demands it.
 
+## What's new — Phase 2: hardened control
+
+Three additions that turn the governance story from "configured" into "operational":
+
+**🎛 Autonomy dial** — three postures (`conservative` / `balanced` / `full`) that rewrite
+tier-rule *effects* without touching conditions: conservative escalates tier-1
+allowances to human approval; full grants tier-2 autonomy. **Tier 3 and every
+deny rule are posture-proof.** Change it from the dashboard nav bar and watch
+the KPIs move; every change lands in the audit log (`posture.change`).
+
+**💾 Durable approvals** — A2A tasks persist to SQLite (`data/tasks/*.sqlite`),
+so a task parked in `input-required` survives an agent crash:
+`tests/test_durability.py` kills the orchestrator with SIGKILL mid-approval,
+restarts it, and the human decision still completes the task. The money quote
+for incident reviews: *the approval queue never orphans.*
+
+**🚧 Boundary hooks** — the gateway is the policy *decision* point and the A2A
+client inside every agent is the *enforcement* point: no message leaves an
+agent without passing `hooks.yaml` first. Effects: `block` (injection patterns
+are refused mid-workflow — see the seeded "Special" vendor die at the research
+hop instead of at policy), `redact` (PII masked at the wire), `annotate`.
+Fail-open on gateway outage is deliberate and documented; in-agent guardrails
+remain the inner defense line.
+
 ## What it demonstrates
 
 | Pillar | Implementation |

@@ -126,11 +126,13 @@ function TaskDetail({ detail, onBack }: { detail: any; onBack: () => void }) {
                   {e.type === "task.state" && `A2A task state → ${e.data?.state}`}
                   {e.type === "a2a.hop" && `delegating over A2A → ${e.data?.to} (tracecontext propagated)`}
                   {e.type === "a2a.artifact" && `artifact published: ${e.data?.artifact} — ${e.data?.preview ?? ""}`}
-                  {e.type === "policy.decision" && `${e.data?.summary} → route ${e.data?.route}`}
+                  {e.type === "policy.decision" && `${e.data?.summary} → route ${e.data?.route}${e.data?.posture && e.data.posture !== "balanced" ? ` (posture: ${e.data.posture})` : ""}`}
+                  {e.type === "hook.blocked" && `⛔ boundary hook “${e.data?.hook}” refused the outbound message — task rejected at the boundary`}
+                  {e.type === "hook.redacted" && `boundary redaction applied before send (${(e.data?.annotations ?? []).map((a: any) => a.hook).join(", ")})`}
                   {e.type === "guardrail.hit" && `guardrail: ${e.data?.redactions ?? 0} redaction(s)${e.data?.injection_patterns?.length ? ` · ${e.data.injection_patterns.length} injection flag(s)` : ""} — before any LLM call`}
                   {e.type === "permit.rejected" && `executor REFUSED action — no valid permit`}
                   {e.type === "task.received" && "request submitted to orchestrator (message/send)"}
-                  {["task.state", "a2a.hop", "a2a.artifact", "policy.decision", "guardrail.hit", "permit.rejected", "task.received"].includes(e.type) ? "" : JSON.stringify(e.data).slice(0, 140)}
+                  {["task.state", "a2a.hop", "a2a.artifact", "policy.decision", "guardrail.hit", "permit.rejected", "task.received", "hook.blocked", "hook.redacted"].includes(e.type) ? "" : JSON.stringify(e.data).slice(0, 140)}
                 </div>
               </div>
             </div>

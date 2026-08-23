@@ -14,7 +14,8 @@ Evaluation semantics — deliberately conservative:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -65,6 +66,8 @@ class Condition:
                 return node in self.value
             if self.op == "contains":
                 return self.value in node
+            if self.op == "matches":  # case-insensitive regex (hook/boundary rules)
+                return re.search(str(self.value), str(node), re.IGNORECASE) is not None
         except (TypeError, ValueError):
             return False
         return False
@@ -134,10 +137,11 @@ class PolicyEngine:
             )
         return cls(rules, default_effect=Effect(raw.get("default_effect", "allow")))
 
-    def evaluate(self, payload: dict[str, Any]) -> PolicyDecision:
+    def evaluate(self, payload: dict[str, Any], posture: str = "balanced") -> PolicyDecision:
+        rules = apply_posture(self.rules, posture)
         hits: list[RuleHit] = [
             RuleHit(rule=r, detail=f"{r.when.path} {r.when.op} {r.when.value!r}" if r.when else "unconditional")
-            for r in self.rules
+            for r in rules
             if r.when is None or r.when.matches(payload)
         ]
         if not hits:
@@ -145,3 +149,35 @@ class PolicyEngine:
         worst = max(hits, key=lambda h: _SEVERITY[h.rule.effect])
         tiers = [h.rule.tier for h in hits if h.rule.tier is not None]
         return PolicyDecision(effect=worst.rule.effect, hits=hits, tier=max(tiers) if tiers else None)
+
+
+# ---------------------------------------------------------------------------
+# Autonomy dial: policy postures (Phase 2)
+#
+# A posture rewrites the EFFECT of tier rules (convention: rule ids ending in
+# ".tierN") without touching the conditions, so the dial changes "how much
+# autonomy" never "what is compliant":
+#
+#   conservative — tier-1 allowances become require_approval: humans see all
+#   balanced     — the policy set as written (default)
+#   full         — tier-2 approvals become allow: autonomy expands one band
+#
+# Tier-3 (and any deny) are never relaxed by any posture.
+# ---------------------------------------------------------------------------
+
+POSTURE_BALANCED = "balanced"
+POSTURES = ("conservative", "balanced", "full")
+
+
+def apply_posture(rules: list[Rule], posture: str) -> list[Rule]:
+    if posture not in POSTURES:
+        raise ValueError(f"unknown posture {posture!r}; expected one of {POSTURES}")
+    out: list[Rule] = []
+    for r in rules:
+        if posture == "conservative" and r.effect is Effect.ALLOW and r.id.endswith(".tier1"):
+            out.append(replace(r, effect=Effect.REQUIRE_APPROVAL, tier=1))
+        elif posture == "full" and r.effect is Effect.REQUIRE_APPROVAL and r.id.endswith(".tier2"):
+            out.append(replace(r, effect=Effect.ALLOW))
+        else:
+            out.append(r)
+    return out

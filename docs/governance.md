@@ -17,6 +17,9 @@ program actually gets measured against.
 | 8 | Agent identity & least privilege | Identity registry with scopes; executor is the only `po:write` holder | `policies/identity.yaml` |
 | 9 | Governed expansion | Deploying a high-risk agent definition itself requires human approval | Studio deploy → Approvals |
 | 10 | Observability | Distributed trace across all agents + LLM spans; KPIs: autonomy rate, escalation rate, approval latency, denials | Overview view, Langfuse |
+| 11 | Autonomy governance (P2) | Posture dial (conservative/balanced/full) rewrites tier-rule effects; tier 3 + denies posture-proof; every change audited | `POST /api/posture`, audit `posture.change` |
+| 12 | Boundary enforcement (P2) | Outbound-message hooks: block / redact / annotate at the A2A boundary (gateway decides, clients enforce) | `hooks.yaml`, audit `hook.blocked` |
+| 13 | Durability (P2) | Task + approval state survives agent crash (SQLite task stores) | `tests/test_durability.py` |
 
 ## NIST AI Risk Management Framework (AI RMF 1.0)
 

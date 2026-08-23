@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS agent_defs (
   id TEXT PRIMARY KEY, name TEXT UNIQUE, version INTEGER, status TEXT,
   definition TEXT, created_at REAL, updated_at REAL
 );
+CREATE TABLE IF NOT EXISTS kv (
+  key TEXT PRIMARY KEY, value TEXT
+);
 """
 
 
@@ -248,3 +251,17 @@ class Database:
     def get_agent_def(self, name: str) -> dict[str, Any] | None:
         row = self._conn.execute("SELECT * FROM agent_defs WHERE name = ?", (name,)).fetchone()
         return {**dict(row), "definition": json.loads(row["definition"] or "{}")} if row else None
+
+    # -- key/value (posture + other runtime settings) --------------------------
+
+    def kv_get(self, key: str, default: str | None = None) -> str | None:
+        row = self._conn.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def kv_set(self, key: str, value: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO kv (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
+            self._conn.commit()

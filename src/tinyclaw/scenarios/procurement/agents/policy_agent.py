@@ -43,7 +43,8 @@ class PolicyExecutor(TinyclawExecutor):
 
     async def handle(self, request: AgentRequest, updater: TaskUpdater) -> None:
         payload = self._evaluation_payload(request)
-        decision = self.engine.evaluate(payload)
+        posture = (request.data or {}).get("posture", "balanced")
+        decision = self.engine.evaluate(payload, posture=posture)
         tier = decision.tier or 1
         if decision.is_denied:
             # A hard policy deny overrides any risk-class routing.
@@ -69,6 +70,7 @@ class PolicyExecutor(TinyclawExecutor):
                         "tier": tier,
                         "route": route.route.value,
                         "action": ACTION,
+                        "posture": posture,
                         "payload_summary": {k: payload.get(k) for k in ("amount", "injection_flags")},
                     },
                 },
@@ -82,6 +84,7 @@ class PolicyExecutor(TinyclawExecutor):
                 "tier": tier,
                 "hits": [h.rule.id for h in decision.hits],
                 "summary": decision.summary(),
+                "posture": posture,
             },
             task_id=request.task_id,
         )

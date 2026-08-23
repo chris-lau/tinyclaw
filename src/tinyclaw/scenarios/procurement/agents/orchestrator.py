@@ -18,7 +18,7 @@ import httpx
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TextPart
 
-from ....core.a2a_client import A2ACaller
+from ....core.a2a_client import A2ACaller, HookBlockedError
 from ....core.agent import AgentRequest, AgentSpec, TinyclawExecutor
 from ....core.config import Settings
 from ..urls import EXECUTOR_URL, INTAKE_URL, POLICY_URL, RESEARCH_URL, SELF_URL
@@ -47,6 +47,15 @@ class GatewayClient:
         r.raise_for_status()
         return r.json()
 
+    async def posture(self) -> str:
+        """Current autonomy-dial posture (public endpoint; fail → balanced)."""
+        try:
+            r = await self._http.get("/api/posture")
+            r.raise_for_status()
+            return r.json().get("posture", "balanced")
+        except Exception:
+            return "balanced"
+
     async def aclose(self) -> None:
         await self._http.aclose()
 
@@ -63,10 +72,12 @@ class OrchestratorExecutor(TinyclawExecutor):
             settings,
         )
         self.gateway = GatewayClient(settings)
-        self.intake = A2ACaller(INTAKE_URL)
-        self.research = A2ACaller(RESEARCH_URL)
-        self.policy = A2ACaller(POLICY_URL)
-        self.executor = A2ACaller(EXECUTOR_URL)
+        # Settings-aware callers: every outbound message passes the gateway's
+        # boundary-hook policy decision point before it leaves this agent.
+        self.intake = A2ACaller(INTAKE_URL, settings=settings, caller_name="orchestrator")
+        self.research = A2ACaller(RESEARCH_URL, settings=settings, caller_name="orchestrator")
+        self.policy = A2ACaller(POLICY_URL, settings=settings, caller_name="orchestrator")
+        self.executor = A2ACaller(EXECUTOR_URL, settings=settings, caller_name="orchestrator")
 
     async def handle(self, request: AgentRequest, updater: TaskUpdater) -> None:
         if request.is_resume and request.metadata.get("tinyclaw.decision"):
@@ -99,20 +110,48 @@ class OrchestratorExecutor(TinyclawExecutor):
         await self.artifact(updater, "task.plan", plan, text="plan: intake → research → policy → route → execute")
         await self._hop("intake", task_id)
 
-        extracted = (
-            await self.intake.send_text(
-                f"extract purchase request: {title}", data=payload, metadata={"tinyclaw.requester": requester}
+        # The autonomy dial travels with the task: the policy agent evaluates
+        # under the posture that was current when the run started.
+        posture = await self.gateway.posture()
+
+        try:
+            extracted = (
+                await self.intake.send_text(
+                    f"extract purchase request: {title}",
+                    data=payload,
+                    metadata={"tinyclaw.requester": requester},
+                    hook_task_id=task_id,
+                )
+            ).data
+            amount = float(extracted.get("amount", 0) or 0)
+            await self._task(task_id, ctx, title, amount, "research", "working", requester)
+
+            profile = (
+                await self.research.send_text(
+                    f"enrich vendor {extracted.get('vendor')}", data=extracted, hook_task_id=task_id
+                )
+            ).data
+
+            await self._task(task_id, ctx, title, amount, "policy", "working", requester)
+            policy_out = (
+                await self.policy.send_text(
+                    "evaluate policy",
+                    data={"extracted": extracted, "profile": profile, "posture": posture},
+                    hook_task_id=task_id,
+                )
+            ).data
+        except HookBlockedError as blocked:
+            # The boundary refused one of our sends: end the task, loudly.
+            await self.events.report(
+                "hook.blocked", "orchestrator", {"hook": blocked.hook, "detail": blocked.detail}, task_id=task_id
             )
-        ).data
-        amount = float(extracted.get("amount", 0) or 0)
-        await self._task(task_id, ctx, title, amount, "research", "working", requester)
-
-        profile = (await self.research.send_text(f"enrich vendor {extracted.get('vendor')}", data=extracted)).data
-
-        await self._task(task_id, ctx, title, amount, "policy", "working", requester)
-        policy_out = (
-            await self.policy.send_text("evaluate policy", data={"extracted": extracted, "profile": profile})
-        ).data
+            await self._task(task_id, ctx, title, None, "blocked", "rejected", requester)
+            await updater.reject(
+                updater.new_agent_message(
+                    parts=[TextPart(text=f"BLOCKED at the A2A boundary by hook “{blocked.hook}”: {blocked.detail}")]
+                )
+            )
+            return
 
         await self._task(
             task_id,
@@ -211,19 +250,29 @@ class OrchestratorExecutor(TinyclawExecutor):
         task_id, ctx = request.task_id, request.context_id
         await self._hop("executor", task_id)
         await self._task(task_id, ctx, title, amount, "executed", "working", extracted.get("requester", "unknown"))
-        result = (
-            await self.executor.send_text(
-                f"issue PO for {title}",
-                data={
-                    "task_id": task_id,
-                    "action": ACTION,
-                    "amount": amount,
-                    "vendor": extracted.get("vendor"),
-                    "description": extracted.get("description", title),
-                },
-                metadata={"tinyclaw.permit": token},
+        try:
+            result = (
+                await self.executor.send_text(
+                    f"issue PO for {title}",
+                    data={
+                        "task_id": task_id,
+                        "action": ACTION,
+                        "amount": amount,
+                        "vendor": extracted.get("vendor"),
+                        "description": extracted.get("description", title),
+                    },
+                    metadata={"tinyclaw.permit": token},
+                    hook_task_id=task_id,
+                )
+            ).data
+        except HookBlockedError as blocked:
+            await self._task(task_id, ctx, title, amount, "blocked", "rejected", extracted.get("requester", "unknown"))
+            await updater.reject(
+                updater.new_agent_message(
+                    parts=[TextPart(text=f"BLOCKED at the A2A boundary by hook “{blocked.hook}”: {blocked.detail}")]
+                )
             )
-        ).data
+            return
         state = "completed" if result.get("po_number") else "failed"
         await self._task(
             task_id,

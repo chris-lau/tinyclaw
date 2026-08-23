@@ -19,6 +19,8 @@ export const api = {
   auditVerify: () => j("/api/audit/verify"),
   events: (limit = 120) => j(`/api/events?limit=${limit}`),
   kpis: () => j("/api/kpis"),
+  posture: () => j("/api/posture"),
+  setPosture: (posture: string) => j("/api/posture", { method: "POST", body: JSON.stringify({ posture }) }),
   agents: () => j("/api/agents"),
   policies: () => j("/api/policies"),
   scenarios: () => j("/api/scenarios"),

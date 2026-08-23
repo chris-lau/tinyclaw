@@ -15,4 +15,5 @@ policies:
   - policies/procurement.yaml
   - policies/risk.yaml
   - policies/identity.yaml
+  - policies/hooks.yaml
 seed_dir: seed

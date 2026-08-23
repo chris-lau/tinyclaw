@@ -107,14 +107,17 @@ export default function Overview({ live, tick, onOpenTask }: { live: any[]; tick
                   <span style={{ color: "#7f93aa", fontSize: 11 }}>{e.type}</span>
                   <div className="what">
                     {e.type === "task.state" && e.data?.state}
-                    {e.type === "policy.decision" && `${e.data?.effect} → ${e.data?.route} (tier ${e.data?.tier})`}
+                    {e.type === "policy.decision" && `${e.data?.effect} → ${e.data?.route} (tier ${e.data?.tier})${e.data?.posture && e.data.posture !== "balanced" ? ` · posture ${e.data.posture}` : ""}`}
                     {e.type === "guardrail.hit" &&
                       `${e.data?.redactions ?? 0} redaction(s)${e.data?.injection_patterns?.length ? `, ${e.data.injection_patterns.length} injection flag(s)` : ""}`}
+                    {e.type === "hook.blocked" && `⛔ boundary hook “${e.data?.hook}” refused message → ${e.data?.to}`}
+                    {e.type === "hook.redacted" && `boundary redaction before send → ${e.data?.to}`}
+                    {e.type === "posture.changed" && `autonomy dial: ${e.data?.previous} → ${e.data?.posture}`}
                     {e.type === "a2a.hop" && `→ ${e.data?.to}`}
                     {e.type === "audit.append" && `${e.data?.actor} ${e.data?.action} → ${e.data?.decision}`}
                     {e.type === "approval.created" && `${e.data?.subject} ${money(e.data?.amount)}`}
                     {e.type === "agent.deployed" && `${e.data?.name} live at ${e.data?.url}`}
-                    {!["task.state", "policy.decision", "guardrail.hit", "a2a.hop", "audit.append", "approval.created", "agent.deployed"].includes(e.type) && JSON.stringify(e.data).slice(0, 90)}
+                    {!["task.state", "policy.decision", "guardrail.hit", "hook.blocked", "hook.redacted", "posture.changed", "a2a.hop", "audit.append", "approval.created", "agent.deployed"].includes(e.type) && JSON.stringify(e.data).slice(0, 90)}
                   </div>
                 </div>
                 <div className="ms">{fmtClock(e.ts)}</div>

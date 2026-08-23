@@ -153,14 +153,25 @@ def build_agent_card(spec: AgentSpec) -> AgentCard:
     )
 
 
-def build_agent_app(spec: AgentSpec, executor: TinyclawExecutor) -> A2AStarletteApplication:
-    handler = DefaultRequestHandler(agent_executor=executor, task_store=InMemoryTaskStore())
+def build_agent_app(spec: AgentSpec, executor: TinyclawExecutor, task_store: Any = None) -> A2AStarletteApplication:
+    """Assemble the A2A server. Pass a TaskStore for durable tasks (Phase 2):
+    parked input-required tasks then survive an agent restart."""
+    from a2a.server.tasks import TaskStore
+
+    store = task_store if isinstance(task_store, TaskStore) else InMemoryTaskStore()
+    handler = DefaultRequestHandler(agent_executor=executor, task_store=store)
     return A2AStarletteApplication(agent_card=build_agent_card(spec), http_handler=handler)
 
 
 def serve(spec: AgentSpec, executor: TinyclawExecutor, host: str = "127.0.0.1") -> None:
-    """Run one agent as a standalone uvicorn process."""
+    """Run one agent as a standalone uvicorn process.
+
+    Tasks persist to data/tasks/<agent>.sqlite by default (durable approvals);
+    disable with TINYCLAW_DURABLE_TASKS=0.
+    """
+    from .persistence import durable_task_store
+
     port = int(spec.url.rsplit(":", 1)[-1])
-    app = build_agent_app(spec, executor).build()
+    app = build_agent_app(spec, executor, task_store=durable_task_store(spec.name)).build()
     tracing.setup_tracing(spec.name, executor.settings.otlp_endpoint)
     uvicorn.run(app, host=host, port=port, log_level="warning")
