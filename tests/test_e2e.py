@@ -39,8 +39,10 @@ def platform():
         ),
     ]
     try:
+        # Wait for the gateway AND all five agents (slow CI runners lose the
+        # startup race otherwise: submissions hit unbound ports and error).
         with httpx.Client(timeout=5.0) as http:
-            for _ in range(60):
+            for _ in range(120):
                 try:
                     if http.get(f"{GATEWAY}/api/health").status_code == 200:
                         break
@@ -49,19 +51,17 @@ def platform():
                 time.sleep(0.5)
             else:
                 raise RuntimeError("gateway did not come up")
-        # Wait for the AGENTS too (slow CI runners lose the startup race
-        # otherwise: submissions hit unbound ports and come back as errors).
-        for port in (9101, 9102, 9103, 9104, 9105):
-            card_url = f"http://127.0.0.1:{port}/.well-known/agent-card.json"
-            for _ in range(60):
-                try:
-                    if http.get(card_url).status_code == 200:
-                        break
-                except Exception:
-                    pass
-                time.sleep(0.5)
-            else:
-                raise RuntimeError(f"agent on port {port} did not come up")
+            for port in (9101, 9102, 9103, 9104, 9105):
+                card_url = f"http://127.0.0.1:{port}/.well-known/agent-card.json"
+                for _ in range(120):
+                    try:
+                        if http.get(card_url).status_code == 200:
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(0.5)
+                else:
+                    raise RuntimeError(f"agent on port {port} did not come up")
         yield httpx.Client(timeout=120.0, base_url=GATEWAY)
     finally:
         for p in procs:
