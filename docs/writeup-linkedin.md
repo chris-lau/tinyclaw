@@ -24,7 +24,7 @@ The demo ships a procurement scenario: intake → research → policy → human 
 
 It runs end-to-end with zero API keys (deterministic mock mode — CI proves it), or switch to OpenAI/Anthropic with one env var.
 
-🔗 github.com/your-handle/tinyclaw
+🔗 github.com/chris-lau/tinyclaw
 
 Lesson for product leaders: the moat isn't the agents — it's the governance, observability, and human-oversight scaffolding around them. That's what enterprises buy.
 

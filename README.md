@@ -47,7 +47,7 @@ remain the inner defense line.
 ## Quickstart (zero API keys)
 
 ```bash
-git clone https://github.com/<you>/tinyclaw && cd tinyclaw
+git clone https://github.com/chris-lau/tinyclaw && cd tinyclaw
 uv sync --extra dev          # or: pip install -e ".[dev]"
 ./dev.sh                     # gateway + 5 agents + runtime, seeded demo
 ```
