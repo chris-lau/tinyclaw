@@ -19,7 +19,7 @@ from a2a.types import TextPart
 
 from ....core.agent import AgentRequest, AgentSpec, TinyclawExecutor
 from ....core.config import Settings
-from ....core.governance.policy import PolicyEngine
+from ....core.governance.policy import Effect, PolicyEngine
 from ....core.governance.risk import RiskClass, RiskDecision, RiskRouter, Route
 from ..urls import POLICY_URL
 
@@ -46,11 +46,17 @@ class PolicyExecutor(TinyclawExecutor):
         posture = (request.data or {}).get("posture", "balanced")
         decision = self.engine.evaluate(payload, posture=posture)
         tier = decision.tier or 1
+        ar = self.risk.classify(ACTION)
         if decision.is_denied:
             # A hard policy deny overrides any risk-class routing.
-            route = RiskDecision(Route.DENY, RiskClass.ALWAYS_HUMAN, tier, decision.summary())
+            route = RiskDecision(Route.DENY, ar.risk_class, tier, decision.summary())
+        elif decision.effect is Effect.ALLOW and ar.risk_class in (RiskClass.AUTO, RiskClass.THRESHOLD):
+            # The posture-adjusted ALLOW is authoritative: under "full", a
+            # tier-2 allowance executes autonomously. (An ALWAYS_HUMAN action
+            # class still forces a human regardless of posture.)
+            route = RiskDecision(Route.AUTO, ar.risk_class, tier, f"{decision.summary()} · posture={posture}")
         else:
-            route = self.risk.route(ACTION, tier, decision.summary())
+            route = RiskDecision(Route.HUMAN, ar.risk_class, tier, decision.summary())
 
         # The policy decision itself is audit-worthy: full reasoning, all hits.
         async with httpx.AsyncClient(
