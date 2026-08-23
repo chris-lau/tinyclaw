@@ -1,0 +1,139 @@
+# tinyclaw — one command runs the governed agent platform:
+#
+#   docker compose up --build              # platform in mock mode (no API keys)
+#   docker compose --profile llm up        # + real LLM (set OPENAI_API_KEY)
+#   docker compose --profile observability up   # + self-hosted Langfuse (OTLP traces)
+#
+# The Langfuse stack (postgres/clickhouse/valkey/minio) needs ~4 GB RAM.
+
+x-tinyclaw: &tinyclaw
+  build: .
+  environment: &tinyclaw-env
+    TINYCLAW_GATEWAY_URL: http://gateway:9100
+    TINYCLAW_DOCKER: "1"
+    TINYCLAW_INTAKE_URL: http://intake:9101
+    TINYCLAW_RESEARCH_URL: http://research:9102
+    TINYCLAW_POLICY_URL: http://policy:9103
+    TINYCLAW_EXECUTOR_URL: http://executor:9104
+    TINYCLAW_ORCHESTRATOR_URL: http://orchestrator:9105
+    TINYCLAW_LLM_PROVIDER: ${TINYCLAW_LLM_PROVIDER:-mock}
+    TINYCLAW_LLM_MODEL: ${TINYCLAW_LLM_MODEL:-gpt-4o}
+    TINYCLAW_APPROVAL_SECRET: ${TINYCLAW_APPROVAL_SECRET:-dev-approval-secret}
+    TINYCLAW_INTERNAL_TOKEN: ${TINYCLAW_INTERNAL_TOKEN:-dev-internal-token}
+    OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  restart: unless-stopped
+
+services:
+  gateway:
+    <<: *tinyclaw
+    ports: ["9100:9100"]
+
+  intake:
+    <<: *tinyclaw
+    command: ["uv", "run", "python", "-m", "tinyclaw.scenarios.procurement.agents.intake"]
+
+  research:
+    <<: *tinyclaw
+    command: ["uv", "run", "python", "-m", "tinyclaw.scenarios.procurement.agents.research"]
+
+  policy:
+    <<: *tinyclaw
+    command: ["uv", "run", "python", "-m", "tinyclaw.scenarios.procurement.agents.policy_agent"]
+
+  executor:
+    <<: *tinyclaw
+    command: ["uv", "run", "python", "-m", "tinyclaw.scenarios.procurement.agents.executor"]
+
+  orchestrator:
+    <<: *tinyclaw
+    command: ["uv", "run", "python", "-m", "tinyclaw.scenarios.procurement.agents.orchestrator"]
+
+  runtime:
+    <<: *tinyclaw
+    command: ["uv", "run", "python", "-m", "tinyclaw.runtime"]
+
+  seed:
+    <<: *tinyclaw
+    command: ["uv", "run", "python", "-m", "tinyclaw.scenarios.procurement.seed"]
+    restart: "no"
+    depends_on: [gateway, orchestrator]
+
+  # ------------------------------------------------------- observability
+  langfuse-web:
+    profiles: [observability]
+    image: langfuse/langfuse:3
+    ports: ["3000:3000"]
+    environment:
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-please-change-me}
+      SALT: ${SALT:-please-change-me}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-please-change-me-32-chars-minimum!!}
+      DATABASE_URL: postgresql://postgres:postgres@langfuse-postgres:5432/langfuse
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      REDIS_HOST: langfuse-valkey
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${REDIS_AUTH:-}
+      MINIO_ENDPOINT: http://langfuse-minio:9000
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: miniosecret
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+    depends_on:
+      langfuse-postgres: { condition: service_healthy }
+      langfuse-clickhouse: { condition: service_started }
+      langfuse-minio: { condition: service_started }
+    restart: unless-stopped
+
+  langfuse-worker:
+    profiles: [observability]
+    image: langfuse/langfuse-worker:3
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@langfuse-postgres:5432/langfuse
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      REDIS_HOST: langfuse-valkey
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${REDIS_AUTH:-}
+      MINIO_ENDPOINT: http://langfuse-minio:9000
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: miniosecret
+    depends_on:
+      langfuse-postgres: { condition: service_healthy }
+      langfuse-clickhouse: { condition: service_started }
+    restart: unless-stopped
+
+  langfuse-postgres:
+    profiles: [observability]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: langfuse
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+
+  langfuse-clickhouse:
+    profiles: [observability]
+    image: clickhouse/clickhouse-server:24.3
+    environment:
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    ulimits: { nofile: { soft: 262144, hard: 262144 } }
+
+  langfuse-valkey:
+    profiles: [observability]
+    image: valkey/valkey:8-alpine
+
+  langfuse-minio:
+    profiles: [observability]
+    image: minio/minio
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    command: minio server /data
