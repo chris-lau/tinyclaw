@@ -7,10 +7,10 @@ dist/
 build/
 .pytest_cache/
 .ruff_cache/
-data/*.sqlite*
 .env
 node_modules/
 ui/dist/
 .DS_Store
 *.log
 .zcode/
+data/
