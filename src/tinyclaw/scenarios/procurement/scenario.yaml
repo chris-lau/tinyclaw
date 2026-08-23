@@ -1,0 +1,18 @@
+name: procurement
+description: >
+  Purchase-request approval: intake → vendor research → policy evaluation →
+  risk-tiered routing (auto / human approval / deny) → PO execution.
+orchestrator:
+  name: orchestrator
+  url: http://127.0.0.1:9105
+agents:
+  - {name: orchestrator, url: "http://127.0.0.1:9105"}
+  - {name: intake,       url: "http://127.0.0.1:9101"}
+  - {name: research,     url: "http://127.0.0.1:9102"}
+  - {name: policy,       url: "http://127.0.0.1:9103"}
+  - {name: executor,     url: "http://127.0.0.1:9104"}
+policies:
+  - policies/procurement.yaml
+  - policies/risk.yaml
+  - policies/identity.yaml
+seed_dir: seed

@@ -1,0 +1,12 @@
+# Risk registry: every consequential action this scenario can perform.
+# Unknown actions fail safe (treated as always_human by the RiskRouter).
+actions:
+  po.issue:
+    risk_class: threshold
+    description: Issue a purchase order (tier decides auto vs human)
+  payment.execute:
+    risk_class: always_human
+    description: Move money — every execution needs a signed human decision
+  data.export.bulk:
+    risk_class: blocked
+    description: Bulk export disabled in this deployment

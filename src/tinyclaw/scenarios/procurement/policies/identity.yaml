@@ -1,0 +1,22 @@
+# Agent identities: accountability primitive. Every audit entry names one.
+agents:
+  orchestrator:
+    scopes: [procurement:coordinate]
+    tier: 1
+    description: Coordinates the purchase-request workflow over A2A
+  intake:
+    scopes: [request:read]
+    tier: 1
+    description: Extracts structured purchase requests (LLM + guardrails)
+  research:
+    scopes: [vendor:read, sanctions:read]
+    tier: 1
+    description: Vendor enrichment via mock registries
+  policy:
+    scopes: [procurement:eval]
+    tier: 1
+    description: Evaluates policy rules and risk routes
+  executor:
+    scopes: [po:write]
+    tier: 2
+    description: Issues POs — only with a verifiable execution permit

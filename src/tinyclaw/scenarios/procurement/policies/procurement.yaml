@@ -1,0 +1,37 @@
+# Procurement policy set — evaluated on every purchase request.
+# Semantics: ALL rules are evaluated; the most restrictive effect wins
+# (deny > require_approval > allow); every hit is reported to the audit log.
+default_effect: allow
+
+policies:
+  - id: vendor.sanctions.list
+    description: Vendors on sanctions/watchlists are hard-denied
+    priority: 10
+    when: {path: vendor.sanctioned, op: "==", value: true}
+    effect: deny
+
+  - id: input.prompt_injection
+    description: Untrusted fields carrying injection patterns are denied
+    priority: 15
+    when: {path: injection_flags, op: ">=", value: 1}
+    effect: deny
+
+  - id: procurement.amount.tier1
+    description: Under $5k executes autonomously (still audited)
+    priority: 50
+    when: {path: amount, op: "<", value: 5000}
+    effect: allow
+
+  - id: procurement.amount.tier2
+    description: $5k and above requires one human approval (higher tiers stack — max tier wins)
+    priority: 50
+    when: {path: amount, op: ">=", value: 5000}
+    effect: require_approval
+    tier: 2
+
+  - id: procurement.amount.tier3
+    description: $50k+ requires approval at highest tier
+    priority: 50
+    when: {path: amount, op: ">=", value: 50000}
+    effect: require_approval
+    tier: 3
