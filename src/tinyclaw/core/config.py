@@ -38,6 +38,16 @@ class Settings:
     # SQLite database used by the gateway (audit chain, approvals, tasks, agent defs).
     database_path: Path = field(default_factory=lambda: Path(_env("TINYCLAW_DB", "data/tinyclaw.sqlite")))
 
+    # PostgreSQL (Aiven or any PG) — takes precedence over the SQLite path when
+    # set to a postgres:// URI. Requires the `postgres` extra (psycopg).
+    database_url: str | None = field(default_factory=lambda: os.environ.get("TINYCLAW_DATABASE_URL"))
+
+    # Extra CORS origins for the gateway API (comma-separated) — e.g. your
+    # Cloudflare Pages domain: https://tinyclaw.pages.dev
+    cors_origins: list[str] = field(
+        default_factory=lambda: [o.strip() for o in os.environ.get("TINYCLAW_CORS_ORIGINS", "").split(",") if o.strip()]
+    )
+
     # Bearer token agents use to talk to the gateway internal API (demo-grade).
     internal_token: str = field(default_factory=lambda: _env("TINYCLAW_INTERNAL_TOKEN", "dev-internal-token"))
 

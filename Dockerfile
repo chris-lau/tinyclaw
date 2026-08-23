@@ -12,11 +12,12 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-install-project --extra llm
+RUN uv sync --frozen --no-install-project --extra llm --extra postgres
 COPY src/ src/
-RUN uv sync --frozen --extra llm
+RUN uv sync --frozen --extra llm --extra postgres
 COPY --from=ui /build/dist /app/ui/dist
-ENV TINYCLAW_GATEWAY_URL=http://gateway:9100 \
+ENV TINYCLAW_GATEWAY_URL=http://127.0.0.1:9100 \
     TINYCLAW_LLM_PROVIDER=mock
 EXPOSE 9100
-CMD ["uv", "run", "python", "-m", "tinyclaw.gateway"]
+# Single-container mesh: gateway on $PORT + all agents on loopback.
+CMD ["uv", "run", "python", "-m", "tinyclaw.deploy"]

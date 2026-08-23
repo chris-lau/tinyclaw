@@ -1,8 +1,13 @@
-// Same-origin by default in the built bundle (served by the gateway — works
-// from any device that can reach the host, e.g. a phone on the LAN). The
-// Vite dev server talks to the local gateway explicitly.
+// Gateway resolution, in priority order:
+//   1. localStorage["tinyclaw.gateway"] — runtime override (no rebuild needed:
+//      useful when the Cloudflare Pages build predates the Render deploy URL)
+//   2. VITE_GATEWAY build-time env (the standard Pages/CI path)
+//   3. same-origin in production (gateway-served bundle), localhost in dev
+const RUNTIME = typeof localStorage !== "undefined" ? localStorage.getItem("tinyclaw.gateway") : null;
 const BASE =
-  (import.meta as any).env?.VITE_GATEWAY ?? ((import.meta as any).DEV ? "http://127.0.0.1:9100" : "");
+  RUNTIME ??
+  (import.meta as any).env?.VITE_GATEWAY ??
+  ((import.meta as any).DEV ? "http://127.0.0.1:9100" : "");
 
 async function j<T = any>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${BASE}${path}`, {

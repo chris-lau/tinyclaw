@@ -1,0 +1,35 @@
+# Render Blueprint — deploys the whole tinyclaw mesh as one web service.
+#
+#   1. Create an Aiven for PostgreSQL service; copy its connection URI.
+#   2. In Render: New + Blueprint + pick this repo (this file is picked up).
+#   3. Set the secrets below (Render dashboard → Environment):
+#        TINYCLAW_DATABASE_URL   postgres://… (Aiven service URI)
+#        TINYCLAW_APPROVAL_SECRET   long random string
+#        TINYCLAW_INTERNAL_TOKEN    long random string
+#        TINYCLAW_CORS_ORIGINS      https://<your-project>.pages.dev
+#        (optional) TINYCLAW_LLM_PROVIDER / OPENAI_API_KEY for real LLMs
+#   4. Deploy; the service is your API origin for Cloudflare Pages.
+#
+# Full walkthrough: docs/deployment.md
+
+services:
+  - type: web
+    name: tinyclaw-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: TINYCLAW_DATABASE_URL
+        sync: false # secret — set in the Render dashboard (Aiven PG URI)
+      - key: TINYCLAW_APPROVAL_SECRET
+        generateValue: true
+      - key: TINYCLAW_INTERNAL_TOKEN
+        generateValue: true
+      - key: TINYCLAW_CORS_ORIGINS
+        sync: false # set to your Cloudflare Pages domain
+      - key: TINYCLAW_LLM_PROVIDER
+        value: mock
+      - key: TINYCLAW_DURABLE_TASKS
+        value: "1"

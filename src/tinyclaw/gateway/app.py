@@ -66,7 +66,7 @@ class GatewayState:
 
         self._hook_engine_cls = HookEngine
         self.settings = settings
-        self.db = Database(settings.database_path)
+        self.db = Database(settings.database_path, url=settings.database_url)
         self.subscribers: list[asyncio.Queue[dict[str, Any]]] = []
         self.scenarios = load_scenarios()
         self.callers: dict[str, A2ACaller] = {}
@@ -143,9 +143,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await caller.aclose()
 
     app = FastAPI(title="tinyclaw gateway", lifespan=lifespan)
+    # Local dev origins plus any configured deploy origins (TINYCLAW_CORS_ORIGINS,
+    # e.g. the Cloudflare Pages domain serving the dashboard).
+    origins = {
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        *settings.cors_origins,
+    }
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173"],
+        allow_origins=list(origins),
         allow_methods=["*"],
         allow_headers=["*"],
     )

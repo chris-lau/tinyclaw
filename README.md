@@ -75,6 +75,19 @@ TINYCLAW_LLM_PROVIDER=openai  OPENAI_API_KEY=sk-…  ./dev.sh
 TINYCLAW_LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=… ./dev.sh
 ```
 
+## Deploy (Cloudflare Pages + Render + Aiven Postgres)
+
+The whole stack deploys with one Render Blueprint (the agent mesh runs in a
+single container behind one port) plus a static Pages build; state moves to
+Postgres automatically via `TINYCLAW_DATABASE_URL`. Full walkthrough, topology
+diagram, and security notes: **[docs/deployment.md](docs/deployment.md)**.
+
+Local dry-run of the deployed shape (no Docker):
+
+```bash
+PORT=8090 uv run python -m tinyclaw.deploy
+```
+
 ## Mobile
 
 The dashboard is fully responsive — approve from your phone:
