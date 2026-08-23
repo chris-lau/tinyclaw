@@ -17,7 +17,7 @@ services:
     name: tinyclaw-api
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: starter
+    plan: free # 512MB, sleeps after 15 min idle — fine for the mock-mode demo
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
