@@ -49,6 +49,19 @@ def platform():
                 time.sleep(0.5)
             else:
                 raise RuntimeError("gateway did not come up")
+        # Wait for the AGENTS too (slow CI runners lose the startup race
+        # otherwise: submissions hit unbound ports and come back as errors).
+        for port in (9101, 9102, 9103, 9104, 9105):
+            card_url = f"http://127.0.0.1:{port}/.well-known/agent-card.json"
+            for _ in range(60):
+                try:
+                    if http.get(card_url).status_code == 200:
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.5)
+            else:
+                raise RuntimeError(f"agent on port {port} did not come up")
         yield httpx.Client(timeout=120.0, base_url=GATEWAY)
     finally:
         for p in procs:
@@ -99,6 +112,8 @@ def test_full_governed_flow(platform: httpx.Client):
         },
     )
     r.raise_for_status()
+    errors = [x for x in r.json() if "error" in x]
+    assert not errors, f"playground requests errored: {errors}"
     by_title = {x["title"]: x["state"] for x in r.json()}
 
     assert by_title["cables"] == "completed", "tier-1 auto-executes"

@@ -22,6 +22,12 @@ AGENTS = [
 
 
 def main() -> None:
+    import signal
+
+    # SIGTERM must clean up children (tests terminate this launcher); without
+    # a handler the default action orphans five agent processes on their ports.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+
     procs = [subprocess.Popen([sys.executable, "-m", mod]) for mod in AGENTS]
     print(f"started {len(procs)} agents (ports 9101-9105); ctrl-c to stop", flush=True)
     try:
