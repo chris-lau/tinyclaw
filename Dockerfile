@@ -16,8 +16,9 @@ RUN uv sync --frozen --no-install-project --extra llm --extra postgres
 COPY src/ src/
 RUN uv sync --frozen --extra llm --extra postgres
 COPY --from=ui /build/dist /app/ui/dist
-ENV TINYCLAW_GATEWAY_URL=http://127.0.0.1:9100 \
-    TINYCLAW_LLM_PROVIDER=mock
+ENV TINYCLAW_LLM_PROVIDER=mock
+# TINYCLAW_GATEWAY_URL is intentionally NOT baked: deploy.py resolves it to
+# the platform-assigned $PORT at runtime.
 EXPOSE 9100
 # Single-container mesh: gateway on $PORT + all agents on loopback.
 CMD ["uv", "run", "python", "-m", "tinyclaw.deploy"]

@@ -124,7 +124,10 @@ def _run_single_process(port: int, selected: list[str]) -> None:
     from .scenarios.support.agents import policy_agent as support_policy
     from .scenarios.support.agents import research as support_research
 
-    os.environ.setdefault("TINYCLAW_GATEWAY_URL", f"http://127.0.0.1:{port}")
+    # FORCE, not setdefault: the Dockerfile bakes TINYCLAW_GATEWAY_URL=:9100,
+    # but platforms assign their own $PORT — deferring to a stale baked value
+    # silently blackholes every agent→gateway report (events/audit/permits).
+    os.environ["TINYCLAW_GATEWAY_URL"] = f"http://127.0.0.1:{port}"
     tracing.setup_tracing("tinyclaw-mesh", os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"))
 
     factories = {
