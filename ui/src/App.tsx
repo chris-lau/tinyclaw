@@ -83,8 +83,13 @@ export default function App() {
               <option value="full">full autonomy</option>
             </select>
           </div>
-          <div className="pill pill-scenario">
-            Scenario: <b>{health?.scenarios?.[0] ?? "—"}</b>
+          <div
+            className="pill pill-scenario"
+            style={{ cursor: "pointer" }}
+            title="Choose scenario and submit requests in Playground"
+            onClick={() => setView("playground")}
+          >
+            Scenario: <b>{health?.scenarios?.[0] ?? "—"}</b> <span style={{ color: "#5d6b7a" }}>▸</span>
           </div>
           <div className="pill pill-llm">
             {health?.llm ?? "…"} {health?.llm === "mock" ? "· mock mode" : ""}
