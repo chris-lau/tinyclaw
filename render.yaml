@@ -37,3 +37,11 @@ services:
       # one mesh comfortably; set "procurement,support" on a paid tier to run both.
       - key: TINYCLAW_SCENARIOS
         value: procurement
+      # LLM observability (optional): point the mesh at Langfuse Cloud and the
+      # full trace tree + every prompt/completion lands there.
+      #   OTEL_EXPORTER_OTLP_ENDPOINT = https://cloud.langfuse.com/api/public/otel/v1/traces
+      #   OTEL_EXPORTER_OTLP_HEADERS  = authorization=Basic <base64 of pk:sk>
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false # optional — set in the dashboard when you want tracing
+      - key: OTEL_EXPORTER_OTLP_HEADERS
+        sync: false # optional — secret; set in the dashboard
