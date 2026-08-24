@@ -50,6 +50,9 @@ body {
 .pill b { color: #d7e3f0; font-weight: 600; }
 .av { width: 26px; height: 26px; border-radius: 99px; background: #233043; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #9fb2c8; }
 
+/* Hamburger (mobile only — the media query below switches it on) */
+.menu-btn { display: none; }
+
 /* --------------------------------------------------------------- layout */
 .content { flex: 1; padding: 18px 20px 20px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
@@ -228,15 +231,34 @@ a { color: var(--intake); }
   .form, .stside { flex: none; width: 100%; }
 }
 
-/* Phones: wrapped nav, swipeable pipeline, compact task rows */
+/* Phones: hamburger nav, swipeable pipeline, compact task rows */
 @media (max-width: 860px) {
-  .topnav { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 6px 10px; }
+  .topnav { flex-wrap: wrap; height: auto; min-height: 52px; padding: 8px 12px; gap: 6px 10px; position: relative; }
   .logo { font-size: 14px; }
-  .navlinks { order: 3; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-  .navlinks::-webkit-scrollbar { display: none; }
-  .nl { white-space: nowrap; padding: 6px 10px; }
   .nr { gap: 6px; }
   .pill-scenario, .pill-llm { display: none; }
+
+  /* Hamburger: tabs live in a dropdown panel with real touch targets */
+  .menu-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 42px; height: 42px; border-radius: 9px;
+    background: transparent; border: 1px solid #223041;
+    color: var(--text); font-size: 17px; cursor: pointer; padding: 0;
+  }
+  .menu-btn:active { background: #1a2330; }
+  .navlinks {
+    display: none;
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 60;
+    flex-direction: column; gap: 4px;
+    background: #0d1319; border-bottom: 1px solid #1c2632;
+    padding: 8px 10px 12px;
+    box-shadow: 0 14px 24px rgba(0, 0, 0, .45);
+  }
+  .navlinks.open { display: flex; }
+  .nl { padding: 13px 14px; font-size: 15px; border-radius: 9px; }
+  .nl.on { background: #1a2330; }
+  .posture-label { display: none; }
+  .pill-posture { padding: 8px 10px; }
 
   .content { padding: 10px 12px 16px; gap: 10px; }
 

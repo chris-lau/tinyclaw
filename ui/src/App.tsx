@@ -24,6 +24,12 @@ export default function App() {
   const [health, setHealth] = useState<any>(null);
   const [tick, setTick] = useState(0);
   const [posture, setPosture] = useState<string>("balanced");
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  function navigate(v: View) {
+    setView(v);
+    setMenuOpen(false);
+  }
 
   const bump = useCallback(() => setTick((t) => t + 1), []);
 
@@ -54,19 +60,19 @@ export default function App() {
   return (
     <div className="app">
       <div className="topnav">
-        <div className="logo" onClick={() => setView("overview")}>
+        <div className="logo" onClick={() => navigate("overview")}>
           <div className="mark">🦞</div>tinyclaw
         </div>
-        <div className="navlinks">
+        <div className={`navlinks ${menuOpen ? "open" : ""}`}>
           {TABS.map((t) => (
-            <div key={t.id} className={`nl ${view === t.id ? "on" : ""}`} onClick={() => setView(t.id)}>
+            <div key={t.id} className={`nl ${view === t.id ? "on" : ""}`} onClick={() => navigate(t.id)}>
               {t.label}
             </div>
           ))}
         </div>
         <div className="nr">
           <div className="pill pill-posture" title="Autonomy dial — rewrites tier-rule effects; tier 3 and denies are never relaxed">
-            Autonomy:&nbsp;
+            <span className="posture-label">Autonomy:&nbsp;</span>
             <select
               value={posture}
               onChange={(e) => changePosture(e.target.value)}
@@ -83,6 +89,14 @@ export default function App() {
           <div className="pill pill-llm">
             {health?.llm ?? "…"} {health?.llm === "mock" ? "· mock mode" : ""}
           </div>
+          <button
+            className="menu-btn"
+            aria-label="Menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            {menuOpen ? "✕" : "☰"}
+          </button>
           <div className="av">CL</div>
         </div>
       </div>
