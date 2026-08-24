@@ -74,6 +74,7 @@ export default function Studio({ tick, onDeployed }: { tick: number; onDeployed:
     setDry(r.results);
   }
 
+  const selectedDef = defs.find((d) => d.name === selName);
   const highRisk = form.tools.some((t: string) => tools.find((x) => x.name === t)?.high_risk) || ["tier2", "tier3", "always_human"].includes(form.risk_class);
 
   return (
@@ -82,11 +83,31 @@ export default function Studio({ tick, onDeployed }: { tick: number; onDeployed:
         <button className="newb" onClick={() => { setSelName(null); setForm(BLANK); setChat([]); setDry(null); }}>＋ New agent</button>
         <div style={{ padding: "6px 14px 4px" }}><h3 className="sec">Registry</h3></div>
         {defs.map((d) => (
-          <div className={`rl ${d.name === selName ? "sel" : ""}`} key={d.id}
+          <div className={`rl ${d.name === selName ? "sel" : ""} ${d.status === "retired" ? "retired" : ""}`} key={d.id}
                onClick={() => { setSelName(d.name); setForm({ ...BLANK, ...d.definition, tools: d.definition.tools ?? [] }); setChat([]); setDry(null); }}>
             <span className="dot" style={{ background: d.status === "live" ? "#34d399" : "#5d6b7a" }} />
             <span className="nm">{d.name}</span>
-            <span className="chip c-gray">{d.status} v{d.version}</span>
+            <span className={`chip ${d.status === "live" ? "c-green" : d.status === "retired" ? "c-red" : "c-gray"}`}>
+              {d.status} v{d.version}
+            </span>
+            <button
+              className="del"
+              title="Delete: removed entirely if the agent has no recorded activity; retired (history preserved) if it has"
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (!window.confirm(`Delete “${d.name}”?\n\nNo recorded activity → hard delete.\nAny activity → retired, history preserved.`)) return;
+                try {
+                  const r = await api.studioDelete(d.name);
+                  setMsg(r.deleted === "hard" ? `“${d.name}” hard-deleted (no activity)` : `“${d.name}” retired — ${r.evidence}`);
+                  if (selName === d.name) { setSelName(null); setForm(BLANK); }
+                  const list = await api.studioAgents();
+                  setDefs(list);
+                  onDeployed();
+                } catch (err: any) {
+                  setMsg(`error: ${err.message}`);
+                }
+              }}
+            >✕</button>
           </div>
         ))}
         {defs.length === 0 && <div className="empty" style={{ padding: 16 }}>no drafts yet</div>}
@@ -166,13 +187,17 @@ export default function Studio({ tick, onDeployed }: { tick: number; onDeployed:
 
         <div className="st-act">
           <div className="st-note">
-            {highRisk
+            {selectedDef?.status === "retired"
+              ? "⛔ retired agent — history is preserved and it cannot be redeployed; create a new agent to replace it."
+              : highRisk
               ? "⚠ high-risk tool binding or elevated risk class ⇒ deployment itself routes through the human approval queue — the platform governs its own expansion."
               : "tier-1 definition with safe tools deploys directly (still audited)."}
           </div>
           {msg && <span style={{ fontSize: 11.5, color: "#34d399" }}>{msg}</span>}
-          <button className="btn btn-gh" style={{ marginLeft: "auto" }} onClick={save}>Save draft</button>
-          <button className="btn btn-o" onClick={deploy} disabled={!selName}>Deploy {highRisk ? "→ requires approval" : ""}</button>
+          <button className="btn btn-gh" style={{ marginLeft: "auto" }} onClick={save} disabled={selectedDef?.status === "retired"}>Save draft</button>
+          <button className="btn btn-o" onClick={deploy} disabled={!selName || selectedDef?.status === "retired"}>
+            Deploy {highRisk ? "→ requires approval" : ""}
+          </button>
         </div>
       </div>
     </div>

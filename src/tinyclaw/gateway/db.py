@@ -327,6 +327,13 @@ class Database:
         row = self._one("SELECT * FROM agent_defs WHERE name = ?", (name,))
         return {**row, "definition": json.loads(row["definition"] or "{}")} if row else None
 
+    def delete_agent_def(self, name: str) -> bool:
+        """Hard delete of the definition row. True if a row was removed."""
+        with self._lock:
+            cur = self._conn.execute(self._q("DELETE FROM agent_defs WHERE name = ?"), (name,))
+            self._conn.commit()
+        return bool(cur.rowcount)
+
     # -- key/value (posture + other runtime settings) --------------------------
 
     def kv_get(self, key: str, default: str | None = None) -> str | None:

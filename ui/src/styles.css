@@ -169,6 +169,10 @@ body {
 .reg { width: 266px; flex-shrink: 0; display: flex; flex-direction: column; overflow: auto; }
 .newb { margin: 13px 14px 4px; background: linear-gradient(135deg, #f97316, #ef4444); color: #fff; font-weight: 700; font-size: 12.5px; text-align: center; padding: 9px; border-radius: 8px; cursor: pointer; border: none; }
 .rl { padding: 9px 14px; display: flex; align-items: center; gap: 9px; border-bottom: 1px solid #141d29; cursor: pointer; font-size: 12.5px; }
+.rl.retired { opacity: 0.5; }
+.rl.retired .nm { text-decoration: line-through; }
+.rl .del { margin-left: 6px; background: none; border: none; color: #5d6b7a; cursor: pointer; font-size: 13px; padding: 3px 7px; border-radius: 6px; line-height: 1; }
+.rl .del:hover { color: #f87171; background: rgba(248, 113, 113, 0.12); }
 .rl .nm { font-weight: 600; flex: 1; }
 .rl.sel { background: #151d28; box-shadow: inset 2px 0 0 var(--accent); }
 .st-main { flex: 1; display: flex; flex-direction: column; min-height: 0; }

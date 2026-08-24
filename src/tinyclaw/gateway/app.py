@@ -676,6 +676,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         d = gw().db.get_agent_def(name)
         if not d:
             raise HTTPException(404, "unknown agent definition")
+        if d["status"] == "retired":
+            raise HTTPException(409, "agent is retired — its history is preserved; recreate a new agent instead")
         runtime_url = os.environ.get("TINYCLAW_RUNTIME_URL", "http://127.0.0.1:9111")
         try:
             async with httpx.AsyncClient(timeout=15.0) as http:
@@ -701,6 +703,78 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
         )
         return hosted
+
+    # ------------------------------------------------- lifecycle deletion
+    # Accountability rule: an agent that has DONE anything (served requests,
+    # produced artifacts, fired guardrails) can never be erased — only
+    # retired, with definition and history preserved. An agent that has done
+    # nothing can be hard-deleted. The deletion itself is always audited.
+
+    LIFECYCLE_AUDIT_ACTIONS = {"agent.define", "agent.deploy", "agent.delete"}
+    ACTIVITY_EVENT_TYPES = {"a2a.artifact", "task.state", "guardrail.hit", "hook.blocked", "permit.rejected"}
+
+    def _agent_has_activity(name: str) -> tuple[bool, str]:
+        """(has_activity, evidence) — audit actions by the agent or observed events."""
+        for a in gw().db.audit_entries(1000):
+            if a["actor"] == f"agent:{name}" and a["action"] not in LIFECYCLE_AUDIT_ACTIONS:
+                return True, f"audit: {a['action']}"
+        for e in gw().db.recent_events(1000):
+            if e.get("agent") == name and e.get("type") in ACTIVITY_EVENT_TYPES:
+                return True, f"event: {e['type']}"
+        return False, ""
+
+    async def _stop_hosted_agent(name: str) -> None:
+        runtime_url = os.environ.get("TINYCLAW_RUNTIME_URL", "http://127.0.0.1:9111")
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as http:
+                await http.delete(f"{runtime_url}/hosted/{name}")
+        except Exception:
+            pass  # not hosted (draft) or supervisor down; deletion proceeds
+
+    @app.delete("/api/studio/agents/{name}")
+    async def studio_delete(name: str) -> dict[str, Any]:
+        d = gw().db.get_agent_def(name)
+        if not d:
+            raise HTTPException(404, "unknown agent definition")
+        await _stop_hosted_agent(name)
+        has_activity, evidence = _agent_has_activity(name)
+        if has_activity:
+            gw().db.upsert_agent_def({**d, "status": "retired"})
+            await gw().audit(
+                "human:studio",
+                "agent.delete",
+                name,
+                "soft",
+                evidence=evidence,
+                note="activity found — definition retired, history preserved",
+            )
+            await gw().broadcast(
+                {
+                    "id": uuid.uuid4().hex[:8],
+                    "ts": time.time(),
+                    "type": "agent.retired",
+                    "agent": "gateway",
+                    "data": {"name": name, "evidence": evidence},
+                }
+            )
+            return {
+                "deleted": "soft",
+                "status": "retired",
+                "evidence": evidence,
+                "reason": "agent has recorded activity — definition retired, history preserved",
+            }
+        gw().db.delete_agent_def(name)
+        await gw().audit("human:studio", "agent.delete", name, "hard", evidence="none")
+        await gw().broadcast(
+            {
+                "id": uuid.uuid4().hex[:8],
+                "ts": time.time(),
+                "type": "agent.deleted",
+                "agent": "gateway",
+                "data": {"name": name},
+            }
+        )
+        return {"deleted": "hard", "reason": "no recorded activity — definition removed entirely"}
 
     @app.post("/api/studio/agents/{name}/deploy")
     async def studio_deploy(name: str) -> dict[str, Any]:

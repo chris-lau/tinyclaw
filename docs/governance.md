@@ -20,6 +20,7 @@ program actually gets measured against.
 | 11 | Autonomy governance (P2) | Posture dial (conservative/balanced/full) rewrites tier-rule effects; tier 3 + denies posture-proof; every change audited | `POST /api/posture`, audit `posture.change` |
 | 12 | Boundary enforcement (P2) | Outbound-message hooks: block / redact / annotate at the A2A boundary (gateway decides, clients enforce) | `hooks.yaml`, audit `hook.blocked` |
 | 13 | Durability (P2) | Task + approval state survives agent crash (SQLite task stores) | `tests/test_durability.py` |
+| 14 | Lifecycle accountability | Agent deletion is activity-aware: no recorded activity → hard delete; any activity → soft retire with history preserved, redeploy blocked; deletion itself always audited | `tests/test_studio_lifecycle.py` |
 
 ## NIST AI Risk Management Framework (AI RMF 1.0)
 

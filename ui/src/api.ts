@@ -39,6 +39,7 @@ export const api = {
   studioAgents: () => j("/api/studio/agents"),
   studioCreate: (body: any) => j("/api/studio/agents", { method: "POST", body: JSON.stringify(body) }),
   studioDeploy: (name: string) => j(`/api/studio/agents/${name}/deploy`, { method: "POST" }),
+  studioDelete: (name: string) => j(`/api/studio/agents/${name}`, { method: "DELETE" }),
   studioTest: (name: string, message: string) =>
     j(`/api/studio/agents/${name}/test`, { method: "POST", body: JSON.stringify({ message }) }),
   studioDryRun: (name: string, payload: any) =>
