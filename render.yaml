@@ -33,3 +33,7 @@ services:
         value: mock
       - key: TINYCLAW_DURABLE_TASKS
         value: "1"
+      # Each scenario mesh is ~5 agent processes. The free 512MB instance fits
+      # one mesh comfortably; set "procurement,support" on a paid tier to run both.
+      - key: TINYCLAW_SCENARIOS
+        value: procurement

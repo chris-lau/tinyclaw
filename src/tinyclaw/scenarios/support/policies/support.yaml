@@ -1,0 +1,45 @@
+# Support policy set — same engine as procurement, different domain.
+# Tier rules follow the ".tierN" id convention so the autonomy dial
+# (posture) applies here exactly as it does for procurement.
+default_effect: allow
+
+policies:
+  - id: support.abuse.detected
+    description: Suspected refund abuse is hard-denied
+    priority: 10
+    when: {path: abuse_flag, op: "==", value: true}
+    effect: deny
+
+  - id: support.legal.mention
+    description: Legal threats route to a human with legal context
+    priority: 20
+    when: {path: legal_flag, op: "==", value: true}
+    effect: require_approval
+    tier: 2
+
+  - id: support.churn.risk
+    description: Churn-risked customers need a human touch on money
+    priority: 30
+    when: {path: churn_risk, op: "==", value: true}
+    effect: require_approval
+    tier: 2
+
+  - id: support.refund.tier1
+    description: Refunds under $50 auto-issue as account credit (still audited)
+    priority: 50
+    when: {path: refund_amount, op: "<", value: 50}
+    effect: allow
+
+  - id: support.refund.tier2
+    description: $50+ refunds need one human approval
+    priority: 50
+    when: {path: refund_amount, op: ">=", value: 50}
+    effect: require_approval
+    tier: 2
+
+  - id: support.refund.tier3
+    description: $500+ refunds escalate to the highest tier
+    priority: 50
+    when: {path: refund_amount, op: ">=", value: 500}
+    effect: require_approval
+    tier: 3

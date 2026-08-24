@@ -1,0 +1,11 @@
+# Risk registry for the support scenario.
+actions:
+  refund.issue:
+    risk_class: threshold
+    description: Issue a refund or account credit (tier decides auto vs human)
+  account.adjust.writeoff:
+    risk_class: always_human
+    description: Manual balance write-offs always need a human
+  account.delete:
+    risk_class: blocked
+    description: Account deletion disabled in this deployment

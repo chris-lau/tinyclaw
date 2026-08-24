@@ -99,17 +99,17 @@ export default function Approvals({ tick, onDecided }: { tick: number; onDecided
                 <>
                   <div className="pk-card">
                     <div className="pk-h"><span className="dot" style={{ background: "#38bdf8" }} />Request — extracted by intake</div>
-                    <div className="kv"><span className="k">Amount</span><span className="v"><b>{money(req.amount)}</b></span></div>
-                    <div className="kv"><span className="k">Vendor</span><span className="v">{req.vendor}</span></div>
-                    <div className="kv"><span className="k">Description</span><span className="v">{req.description}</span></div>
-                    <div className="kv"><span className="k">Cost center</span><span className="v">{req.cost_center}</span></div>
+                    <div className="kv"><span className="k">Amount</span><span className="v"><b>{money(req.amount ?? req.refund_amount)}</b></span></div>
+                    <div className="kv"><span className="k">Vendor / Order</span><span className="v">{req.vendor ?? `${req.order_id ?? "—"} · ${req.customer ?? ""}`}</span></div>
+                    <div className="kv"><span className="k">Description</span><span className="v">{req.body_summary ?? req.description}</span></div>
+                    <div className="kv"><span className="k">Context</span><span className="v">{req.cost_center ?? `churn-risk: ${research.churn_risk ?? "—"}`}</span></div>
                   </div>
                   <div className="pk-card">
                     <div className="pk-h"><span className="dot" style={{ background: "#34d399" }} />Research findings</div>
-                    <div className="kv"><span className="k">Vendor id</span><span className="v">{research.vendor?.vendor_id} · tier {research.vendor?.tier}</span></div>
-                    <div className="kv"><span className="k">On-time</span><span className="v">{research.vendor?.on_time_pct}%</span></div>
-                    <div className="kv"><span className="k">Sanctions</span><span className="v">{research.sanctioned ? <b style={{ color: "#f87171" }}>HIT</b> : "clear"}</span></div>
-                    <div className="kv"><span className="k">Budget</span><span className="v">{money(research.budget?.remaining)} remaining in {req.cost_center}</span></div>
+                    <div className="kv"><span className="k">Record</span><span className="v">{research.vendor?.vendor_id ?? research.order?.order_id} · {research.vendor?.tier ? `tier ${research.vendor.tier}` : research.customer_tier ?? ""}</span></div>
+                    <div className="kv"><span className="k">Quality</span><span className="v">{research.vendor?.on_time_pct ? `${research.vendor.on_time_pct}% on-time` : research.order?.found != null ? (research.order.found ? "order verified" : "order NOT FOUND") : "—"}</span></div>
+                    <div className="kv"><span className="k">Risk flags</span><span className="v">{research.sanctioned ? <b style={{ color: "#f87171" }}>sanctions HIT</b> : research.churn_risk ? <b style={{ color: "#fbbf24" }}>churn risk</b> : "clear"}</span></div>
+                    <div className="kv"><span className="k">Exposure</span><span className="v">{research.budget ? `${money(research.budget.remaining)} budget left` : research.lifetime_value ? `LTV ${money(research.lifetime_value)}` : "—"}</span></div>
                   </div>
                   <div className="pk-card">
                     <div className="pk-h"><span className="dot" style={{ background: "#fbbf24" }} />Policy evaluation</div>

@@ -1,0 +1,21 @@
+agents:
+  support-orchestrator:
+    scopes: [support:coordinate]
+    tier: 1
+    description: Coordinates the support refund workflow over A2A
+  support-intake:
+    scopes: [ticket:read]
+    tier: 1
+    description: Extracts structured tickets (LLM + guardrails)
+  support-research:
+    scopes: [order:read, customer:read]
+    tier: 1
+    description: Order & customer enrichment via mock systems
+  support-policy:
+    scopes: [support:eval]
+    tier: 1
+    description: Evaluates refund policies and risk routes
+  support-executor:
+    scopes: [refund:write]
+    tier: 2
+    description: Issues refunds/credits — only with a verifiable permit

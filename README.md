@@ -42,7 +42,7 @@ remain the inner defense line.
 | **AI governance** | Policy-as-code (YAML, most-restrictive-wins, all hits audited) · risk registry per action (`auto`/`threshold`/`always_human`/`blocked`, unknown = fail-safe) · PII redaction + prompt-injection guardrails **before any LLM call** · hash-chained **tamper-evident audit log** · agent identities & scopes · mapped to [NIST AI RMF + EU AI Act](docs/governance.md) |
 | **Execution authorization** | HMAC-signed permits bound to task + action + TTL. The executor refuses everything it can't verify — even a compromised orchestrator can't force execution (test-proven) |
 | **Agent Studio** | Create agents declaratively (prompt/model/tools/risk/policies), test them in a console with policy dry-run, deploy to a live A2A server — and deploying a **high-risk agent itself requires human approval**. The platform governs its own expansion. |
-| **Scenario packs** | The core is scenario-agnostic; procurement approval ships as the first pluggable pack |
+| **Scenario packs** | The core is scenario-agnostic; **two packs ship**: procurement approval (tiered purchase requests) and **support refunds** (ticket intake → order lookup → refund tiers, abuse deny, churn/legal escalation, credential boundary) — same engine, same permits, same approval queue, same autonomy dial, zero core changes |
 
 ## Quickstart (zero API keys)
 

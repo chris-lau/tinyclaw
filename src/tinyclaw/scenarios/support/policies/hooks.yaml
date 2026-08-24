@@ -1,0 +1,13 @@
+# Boundary hooks for support: credentials never cross the agent boundary.
+hooks:
+  - id: credentials.boundary
+    description: Refuse outbound messages carrying pasted credentials — tickets often contain them
+    on: a2a.send
+    when: {path: text, op: matches, value: "(password|passwd|api[_ -]?key|secret)[\\s]*[:=][\\s]*\\S+"}
+    effect: block
+
+  - id: pii.card.boundary
+    description: Mask raw card numbers in outbound messages and payloads
+    on: a2a.send
+    when: {path: text, op: matches, value: "\\b(?:\\d[ -]?){13,19}\\b"}
+    effect: redact

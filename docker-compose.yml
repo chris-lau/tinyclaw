@@ -16,6 +16,11 @@ x-tinyclaw: &tinyclaw
     TINYCLAW_POLICY_URL: http://policy:9103
     TINYCLAW_EXECUTOR_URL: http://executor:9104
     TINYCLAW_ORCHESTRATOR_URL: http://orchestrator:9105
+    TINYCLAW_SUPPORT_INTAKE_URL: http://support-intake:9201
+    TINYCLAW_SUPPORT_RESEARCH_URL: http://support-research:9202
+    TINYCLAW_SUPPORT_POLICY_URL: http://support-policy:9203
+    TINYCLAW_SUPPORT_EXECUTOR_URL: http://support-executor:9204
+    TINYCLAW_SUPPORT_ORCHESTRATOR_URL: http://support-orchestrator:9205
     TINYCLAW_LLM_PROVIDER: ${TINYCLAW_LLM_PROVIDER:-mock}
     TINYCLAW_LLM_MODEL: ${TINYCLAW_LLM_MODEL:-gpt-4o}
     TINYCLAW_APPROVAL_SECRET: ${TINYCLAW_APPROVAL_SECRET:-dev-approval-secret}
@@ -49,6 +54,26 @@ services:
   orchestrator:
     <<: *tinyclaw
     command: ["uv", "run", "python", "-m", "tinyclaw.scenarios.procurement.agents.orchestrator"]
+
+  support-intake:
+    <<: *tinyclaw
+    command: ["uv", "run", "python", "-m", "tinyclaw.scenarios.support.agents.intake"]
+
+  support-research:
+    <<: *tinyclaw
+    command: ["uv", "run", "python", "-m", "tinyclaw.scenarios.support.agents.research"]
+
+  support-policy:
+    <<: *tinyclaw
+    command: ["uv", "run", "python", "-m", "tinyclaw.scenarios.support.agents.policy_agent"]
+
+  support-executor:
+    <<: *tinyclaw
+    command: ["uv", "run", "python", "-m", "tinyclaw.scenarios.support.agents.executor"]
+
+  support-orchestrator:
+    <<: *tinyclaw
+    command: ["uv", "run", "python", "-m", "tinyclaw.scenarios.support.agents.orchestrator"]
 
   runtime:
     <<: *tinyclaw

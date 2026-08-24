@@ -24,26 +24,43 @@ import signal
 import subprocess
 import sys
 
-AGENTS = [
-    "tinyclaw.scenarios.procurement.agents.intake",
-    "tinyclaw.scenarios.procurement.agents.research",
-    "tinyclaw.scenarios.procurement.agents.policy_agent",
-    "tinyclaw.scenarios.procurement.agents.executor",
-    "tinyclaw.scenarios.procurement.agents.orchestrator",
-    "tinyclaw.runtime",
-]
+SCENARIOS: dict[str, list[str]] = {
+    "procurement": [
+        "tinyclaw.scenarios.procurement.agents.intake",
+        "tinyclaw.scenarios.procurement.agents.research",
+        "tinyclaw.scenarios.procurement.agents.policy_agent",
+        "tinyclaw.scenarios.procurement.agents.executor",
+        "tinyclaw.scenarios.procurement.agents.orchestrator",
+    ],
+    "support": [
+        "tinyclaw.scenarios.support.agents.intake",
+        "tinyclaw.scenarios.support.agents.research",
+        "tinyclaw.scenarios.support.agents.policy_agent",
+        "tinyclaw.scenarios.support.agents.executor",
+        "tinyclaw.scenarios.support.agents.orchestrator",
+    ],
+}
+MESH_SERVICES = ["tinyclaw.runtime"]
 
 
 def main() -> None:
     port = int(os.environ.get("PORT", "9100"))
+    # Scenario selection: each mesh is ~5 processes; on memory-constrained
+    # plans (Render free = 512MB) run a subset, e.g. TINYCLAW_SCENARIOS=procurement.
+    selected = [s.strip() for s in os.environ.get("TINYCLAW_SCENARIOS", ",".join(SCENARIOS)).split(",") if s.strip()]
+    unknown = [s for s in selected if s not in SCENARIOS]
+    if unknown:
+        raise SystemExit(f"unknown scenario(s) {unknown}; available: {list(SCENARIOS)}")
+    modules = [m for s in selected for m in SCENARIOS[s]] + MESH_SERVICES
+
     # Agents reach the gateway on container-loopback, whatever the public host is.
     child_env = {
         **os.environ,
         "TINYCLAW_GATEWAY_URL": f"http://127.0.0.1:{port}",
     }
 
-    procs = [subprocess.Popen([sys.executable, "-m", mod], env=child_env) for mod in AGENTS]
-    print(f"[deploy] started {len(procs)} agent processes (loopback 9101-9105, 9111)", flush=True)
+    procs = [subprocess.Popen([sys.executable, "-m", mod], env=child_env) for mod in modules]
+    print(f"[deploy] scenarios={selected} · started {len(procs)} processes", flush=True)
 
     # SIGTERM must tear children down (platforms send it on redeploys).
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))

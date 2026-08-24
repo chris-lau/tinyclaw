@@ -20,6 +20,7 @@ mkdir -p data
 
 uv run python -m tinyclaw.gateway &
 uv run python -m tinyclaw.scenarios.procurement &
+uv run python -m tinyclaw.scenarios.support &
 uv run python -m tinyclaw.runtime &
 
 trap 'pkill -P $$ 2>/dev/null || true; pkill -f "tinyclaw" 2>/dev/null || true' EXIT

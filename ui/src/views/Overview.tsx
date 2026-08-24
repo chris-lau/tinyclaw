@@ -64,10 +64,10 @@ export default function Overview({ live, tick, onOpenTask }: { live: any[]; tick
 
       <div className="main2">
         <div className="card pipe">
-          <h3 className="sec" style={{ marginBottom: 11 }}>Live pipeline — procurement requests</h3>
+          <h3 className="sec" style={{ marginBottom: 11 }}>Live pipeline — requests across all scenarios</h3>
           <div className="stages">
             {STAGES.map((s) => {
-              const inStage = tasks.filter((t) => t.stage === s.stage && !["rejected", "denied", "failed"].includes(t.state));
+              const inStage = tasks.filter((t) => t.stage === s.stage && !["rejected", "denied", "failed", "blocked"].includes(t.state));
               return (
                 <div className="stage" key={s.stage}>
                   <div className="stg-h">
@@ -78,7 +78,12 @@ export default function Overview({ live, tick, onOpenTask }: { live: any[]; tick
                   {inStage.slice(0, 5).map((t) => (
                     <div className="tk" key={t.task_id} onClick={onOpenTask} title={t.title}>
                       <div className="r1">
-                        <span className="mono" style={{ fontSize: 11 }}>{t.task_id.slice(0, 8)}</span>
+                        <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                          {t.scenario && t.scenario !== "procurement" && (
+                            <span className="chip c-blue" style={{ fontSize: 8.5, padding: "1px 5px" }}>{t.scenario}</span>
+                          )}
+                          <span className="mono" style={{ fontSize: 11 }}>{t.task_id.slice(0, 8)}</span>
+                        </span>
                         <span className="amt">{money(t.amount)}</span>
                       </div>
                       <div className="ttl">{t.title}</div>

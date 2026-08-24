@@ -1,0 +1,20 @@
+name: support
+description: >
+  Customer support refunds: intake → order research → policy evaluation
+  (refund tiers, abuse & legal flags) → risk-tiered routing → credit/refund
+  execution.
+orchestrator:
+  name: support-orchestrator
+  url: http://127.0.0.1:9205
+agents:
+  - {name: support-intake,     url: "http://127.0.0.1:9201"}
+  - {name: support-research,   url: "http://127.0.0.1:9202"}
+  - {name: support-policy,     url: "http://127.0.0.1:9203"}
+  - {name: support-executor,   url: "http://127.0.0.1:9204"}
+  - {name: support-orchestrator, url: "http://127.0.0.1:9205"}
+policies:
+  - policies/support.yaml
+  - policies/risk.yaml
+  - policies/identity.yaml
+  - policies/hooks.yaml
+seed_dir: seed
