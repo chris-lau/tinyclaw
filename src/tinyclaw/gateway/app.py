@@ -43,9 +43,15 @@ SCENARIOS_DIR = Path(__file__).parent.parent / "scenarios"
 def load_scenarios() -> dict[str, dict[str, Any]]:
     packs: dict[str, dict[str, Any]] = {}
     docker = bool(os.environ.get("TINYCLAW_DOCKER"))
+    # When a subset of meshes runs (e.g. TINYCLAW_SCENARIOS=procurement on a
+    # memory-constrained deploy), only advertise that subset — otherwise the
+    # fleet panel shows "Down" chips for agents that were deliberately not started.
+    selected = {s.strip() for s in os.environ.get("TINYCLAW_SCENARIOS", "").split(",") if s.strip()}
     for manifest in sorted(SCENARIOS_DIR.glob("*/scenario.yaml")):
         data = yaml.safe_load(manifest.read_text()) or {}
         if not data.get("name"):
+            continue
+        if selected and data["name"] not in selected:
             continue
         if docker:
             # Inside compose, agents live on separate containers: swap the
