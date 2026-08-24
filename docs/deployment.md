@@ -96,6 +96,26 @@ curl -X POST https://tinyclaw-api.onrender.com/api/playground/submit \
 Then approve it in the dashboard's **Approvals** tab and watch the KPIs,
 audit chain, and (with the OTLP endpoint set) traces light up.
 
+## 5. LLM observability (Langfuse Cloud — recommended, free)
+
+The deployed mesh can't run self-hosted Langfuse (512MB), but it doesn't need
+to: Langfuse Cloud hosts the backend and accepts OTLP over the internet.
+
+1. Sign up at [cloud.langfuse.com](https://cloud.langfuse.com) → create a
+   project → **Settings → API Keys → Create new API keys** (public + secret).
+2. On the Render service, add two environment variables:
+   * `OTEL_EXPORTER_OTLP_ENDPOINT` = `https://cloud.langfuse.com/api/public/otel/v1/traces`
+   * `OTEL_EXPORTER_OTLP_HEADERS` = `authorization=Basic <base64>` where
+     base64 is `printf 'pk-lf-…:sk-lf-…' | base64` (public key : secret key)
+3. Redeploy. Submit any playground request — the full trace tree (gateway →
+   orchestrator → specialists, with every LLM prompt/completion and token
+   count) appears in Langfuse within seconds.
+4. Optional: rebuild Pages with `VITE_LANGFUSE_URL=https://cloud.langfuse.com`
+   to turn the dashboard's trace link into a direct deep-link.
+
+The same two variables work for local runs (`export` them before `./dev.sh`).
+Free tier allows 50k observations/month — a demo uses a tiny fraction.
+
 ## Security notes (read before sharing the URL)
 
 This is a portfolio demo, hardened where it matters and honest where it

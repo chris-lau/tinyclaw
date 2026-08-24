@@ -110,9 +110,27 @@ docker compose up --build                        # platform, mock mode
 docker compose --profile observability up        # + self-hosted Langfuse :3000
 ```
 
-Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://langfuse-web:3000/api/public/otel`
-and the same UI links light up with full traces. (~4 GB RAM for the
-observability profile.)
+### Tracing / LLM observability (Langfuse)
+
+The instrumentation is vendor-neutral OTel — point it at any OTLP backend by
+setting two env vars before starting:
+
+**Langfuse Cloud (recommended, no Docker, free tier):** sign up at
+cloud.langfuse.com, create a project + API keys, then:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://cloud.langfuse.com/api/public/otel/v1/traces
+export OTEL_EXPORTER_OTLP_HEADERS="authorization=Basic $(printf 'pk-lf-…:sk-lf-…' | base64)"
+./dev.sh
+```
+
+Same two variables on the Render service trace the deployed mesh too.
+Prompts, completions, tokens, cost, and the full agent-hop trace tree appear
+in Langfuse; the dashboard's Langfuse link lights up.
+
+**Self-hosted (Docker, ~4 GB RAM):** `docker compose --profile observability up`,
+then use `http://localhost:3000/api/public/otel/v1/traces` as the endpoint
+with keys created in the local UI.
 
 ## The dashboard
 

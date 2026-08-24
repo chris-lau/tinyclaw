@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { AGENT_COLORS, ago, api, fmtClock, money } from "../api";
 
+// Langfuse base for trace deep-links: set VITE_LANGFUSE_URL at build time
+// (e.g. https://cloud.langfuse.com or your self-hosted URL). Unset = hidden.
+const LANGFUSE_URL = (import.meta as any).env?.VITE_LANGFUSE_URL ?? "";
+
 function stateChip(state: string) {
   const cls =
     state === "completed" ? "c-green" :
@@ -98,9 +102,9 @@ function TaskDetail({ detail, onBack }: { detail: any; onBack: () => void }) {
         <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {stateChip(t.state)}
           <div style={{ fontSize: 19, fontWeight: 700 }}>{money(t.amount)}</div>
-          {t.trace_id && (
+          {t.trace_id && LANGFUSE_URL && (
             <a className="trace-lnk" style={{ fontSize: 12, border: "1px solid #1e3a52", padding: "5px 11px", borderRadius: 7, background: "rgba(56,189,248,.07)", textDecoration: "none" }}
-               href={`http://localhost:3000/traces/${t.trace_id}`} target="_blank" rel="noreferrer">
+               href={`${LANGFUSE_URL}/trace/${t.trace_id}`} target="_blank" rel="noreferrer">
               Open in Langfuse ↗
             </a>
           )}
