@@ -33,10 +33,11 @@ services:
         value: mock
       - key: TINYCLAW_DURABLE_TASKS
         value: "1"
-      # Each scenario mesh is ~5 agent processes. The free 512MB instance fits
-      # one mesh comfortably; set "procurement,support" on a paid tier to run both.
+      # Both scenario meshes run in the single-process mode (~50MB total):
+      # every agent app shares one interpreter instead of one process each.
+      # TINYCLAW_SINGLE_PROCESS=0 switches to isolated one-per-agent mode.
       - key: TINYCLAW_SCENARIOS
-        value: procurement
+        value: procurement,support
       # LLM observability (optional): point the mesh at Langfuse Cloud and the
       # full trace tree + every prompt/completion lands there.
       #   OTEL_EXPORTER_OTLP_ENDPOINT = https://cloud.langfuse.com/api/public/otel/v1/traces

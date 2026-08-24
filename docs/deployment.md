@@ -53,6 +53,12 @@ gateway, with `/api/health` as the health check.
 Notes:
 * **Real LLMs**: set `TINYCLAW_LLM_PROVIDER=openai` + `OPENAI_API_KEY`
   (or anthropic + `ANTHROPIC_API_KEY`). Default is the keyless mock.
+* **Memory / both scenarios**: the deploy entrypoint runs the whole mesh in
+  a single process — every agent app on a thread sharing one interpreter
+  (~50MB total for both scenario meshes). That's what lets the free 512MB
+  instance run `procurement,support` together. `TINYCLAW_SINGLE_PROCESS=0`
+  switches to isolated one-process-per-agent (better crash isolation,
+  ~10× memory) for bigger plans.
 * **Durability**: approvals/audit live in Postgres and survive redeploys.
   The agents' A2A task stores are SQLite on the container's ephemeral disk —
   fine for a demo; add a Render disk and point `TINYCLAW_TASK_STORE_DIR`-
