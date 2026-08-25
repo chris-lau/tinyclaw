@@ -19,7 +19,6 @@ def make_client(tmp_path: Path) -> TestClient:
 
 def _park_and_decide(c: TestClient, title: str) -> str:
     """Create a task + approval directly (as the mesh would), then decide."""
-    import time as _time
     import uuid
 
     task_id = f"t-{uuid.uuid4().hex[:8]}"
