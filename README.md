@@ -132,6 +132,17 @@ in Langfuse; the dashboard's Langfuse link lights up.
 then use `http://localhost:3000/api/public/otel/v1/traces` as the endpoint
 with keys created in the local UI.
 
+## Roadmap (Phase 3 candidates)
+
+Deliberately deferred — each is scoped, none changes the core story:
+
+- **Budget governance** — per-task and per-agent token/cost caps with hard-stop (task parks when exceeded); makes the KPI panel actionable. The LLM choke-point (`core/llm`) already sees every call, so metering is trivial to add.
+- **Eval runs** — replay the seeded cases against expected routes (auto/human/deny) with pass-rate over time; productizes the NIST *Measure* function.
+- **A2A streaming (SSE)** — live token streaming in the UI using the protocol's streaming transport; today all hops are request/response.
+- **Self-healing mesh** — watchdog thread health-checking each agent loop in single-process mode and rebuilding dead ones; closes the crash-coupling trade-off documented in `docs/deployment.md`.
+- **Studio tool execution** — sandboxed runners for the *declared* tools (currently governance metadata only).
+- **Dashboard auth** — multi-user identity on the API (Cloudflare Access covers the frontend today).
+
 ## The dashboard
 
 1. **Overview** — governance KPIs, live 5-stage pipeline, live A2A traffic, fleet health
