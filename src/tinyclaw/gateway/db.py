@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS policy_sets (
   scenario TEXT PRIMARY KEY, yaml TEXT NOT NULL, version INTEGER,
   updated_at DOUBLE PRECISION, updated_by TEXT
 );
+CREATE TABLE IF NOT EXISTS tools (
+  name TEXT PRIMARY KEY, description TEXT, kind TEXT, config TEXT,
+  high_risk INTEGER, version INTEGER, created_by TEXT, updated_at DOUBLE PRECISION
+);
 """
 
 _SCHEMA_PG = """
@@ -88,6 +92,10 @@ CREATE TABLE IF NOT EXISTS kv (
 CREATE TABLE IF NOT EXISTS policy_sets (
   scenario TEXT PRIMARY KEY, yaml TEXT NOT NULL, version INTEGER,
   updated_at DOUBLE PRECISION, updated_by TEXT
+);
+CREATE TABLE IF NOT EXISTS tools (
+  name TEXT PRIMARY KEY, description TEXT, kind TEXT, config TEXT,
+  high_risk INTEGER, version INTEGER, created_by TEXT, updated_at DOUBLE PRECISION
 );
 """
 
@@ -381,3 +389,48 @@ class Database:
             (scenario, yaml_text, version, time.time(), updated_by),
         )
         return self.get_policy_set(scenario) or {}
+
+    # -- tool registry (configurable, executable, audited) ----------------------
+
+    def seed_tool(self, name: str, description: str, kind: str, config: dict[str, Any], high_risk: bool) -> None:
+        with self._lock:
+            self._conn.execute(
+                self._q(
+                    "INSERT INTO tools (name, description, kind, config, high_risk, version,"
+                    " created_by, updated_at) VALUES (?,?,?,?,?,1,'pack',?)"
+                    " ON CONFLICT(name) DO NOTHING"
+                ),
+                (name, description, kind, json.dumps(config), int(high_risk), time.time()),
+            )
+            self._conn.commit()
+
+    def list_tools(self) -> list[dict[str, Any]]:
+        rows = self._all("SELECT * FROM tools ORDER BY name")
+        return [{**r, "config": json.loads(r["config"] or "{}"), "high_risk": bool(r["high_risk"])} for r in rows]
+
+    def get_tool(self, name: str) -> dict[str, Any] | None:
+        row = self._one("SELECT * FROM tools WHERE name = ?", (name,))
+        return (
+            {**row, "config": json.loads(row["config"] or "{}"), "high_risk": bool(row["high_risk"])} if row else None
+        )
+
+    def upsert_tool(
+        self, name: str, description: str, kind: str, config: dict[str, Any], high_risk: bool, created_by: str
+    ) -> dict[str, Any]:
+        existing = self.get_tool(name) or {"version": 0}
+        version = int(existing["version"] or 0) + 1
+        self._exec(
+            "INSERT INTO tools (name, description, kind, config, high_risk, version, created_by, updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(name) DO UPDATE SET description=excluded.description, kind=excluded.kind,"
+            " config=excluded.config, high_risk=excluded.high_risk, version=excluded.version,"
+            " created_by=excluded.created_by, updated_at=excluded.updated_at",
+            (name, description, kind, json.dumps(config), int(high_risk), version, created_by, time.time()),
+        )
+        return self.get_tool(name) or {}
+
+    def delete_tool(self, name: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute(self._q("DELETE FROM tools WHERE name = ?"), (name,))
+            self._conn.commit()
+        return bool(cur.rowcount)

@@ -49,6 +49,8 @@ export const api = {
   playground: (scenario: string, requests: any[]) =>
     j("/api/playground/submit", { method: "POST", body: JSON.stringify({ scenario, requests }) }),
   studioTools: () => j("/api/studio/tools"),
+  studioCreateTool: (body: any) => j("/api/studio/tools", { method: "POST", body: JSON.stringify(body) }),
+  studioDeleteTool: (name: string) => j(`/api/studio/tools/${name}`, { method: "DELETE" }),
   studioAgents: () => j("/api/studio/agents"),
   studioCreate: (body: any) => j("/api/studio/agents", { method: "POST", body: JSON.stringify(body) }),
   studioDeploy: (name: string) => j(`/api/studio/agents/${name}/deploy`, { method: "POST" }),

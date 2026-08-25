@@ -16,11 +16,12 @@ export default function Studio({ tick, onDeployed }: { tick: number; onDeployed:
   const [tools, setTools] = useState<any[]>([]);
   const [selName, setSelName] = useState<string | null>(null);
   const [form, setForm] = useState<any>(BLANK);
-  const [tab, setTab] = useState<"define" | "test">("define");
+  const [tab, setTab] = useState<"define" | "test" | "tools">("define");
   const [chat, setChat] = useState<{ role: "u" | "a"; text: string }[]>([]);
   const [input, setInput] = useState("");
   const [dry, setDry] = useState<any[] | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [newTool, setNewTool] = useState({ name: "", description: "", kind: "mock", response: "", url: "", method: "GET", high_risk: false });
 
   useEffect(() => {
     api.studioAgents().then((d: any[]) => {
@@ -30,6 +31,29 @@ export default function Studio({ tick, onDeployed }: { tick: number; onDeployed:
     }).catch(() => {});
     api.studioTools().then(setTools).catch(() => {});
   }, [tick]);
+
+  async function saveTool() {
+    try {
+      const config = newTool.kind === "mock" ? { response: newTool.response } : { url: newTool.url, method: newTool.method };
+      const r = await api.studioCreateTool({ name: newTool.name, description: newTool.description, kind: newTool.kind, config, high_risk: newTool.high_risk });
+      setMsg(`tool “${r.name}” saved (v${r.version}) — bind it to any agent`);
+      setNewTool({ name: "", description: "", kind: "mock", response: "", url: "", method: "GET", high_risk: false });
+      api.studioTools().then(setTools).catch(() => {});
+    } catch (e: any) {
+      setMsg(`error: ${e.message}`);
+    }
+  }
+
+  async function deleteTool(name: string) {
+    if (!window.confirm(`Delete tool “${name}”?`)) return;
+    try {
+      await api.studioDeleteTool(name);
+      setMsg(`tool “${name}” deleted`);
+      api.studioTools().then(setTools).catch(() => {});
+    } catch (e: any) {
+      setMsg(`error: ${e.message}`);
+    }
+  }
 
   async function save() {
     try {
@@ -122,9 +146,71 @@ export default function Studio({ tick, onDeployed }: { tick: number; onDeployed:
           <div className="sttabs">
             <div className={`sttab ${tab === "define" ? "on" : ""}`} onClick={() => setTab("define")}>Define</div>
             <div className={`sttab ${tab === "test" ? "on" : ""}`} onClick={() => setTab("test")}>Test</div>
+            <div className={`sttab ${tab === "tools" ? "on" : ""}`} onClick={() => setTab("tools")}>Tools</div>
           </div>
         </div>
 
+        {tab === "tools" ? (
+          <div className="stbody" style={{ flexDirection: "column", gap: 14 }}>
+            <div className="card" style={{ padding: "13px 15px", width: "100%" }}>
+              <h3 className="sec" style={{ marginBottom: 8 }}>Tool registry — executable, risk-classed, audited</h3>
+              {tools.map((t: any) => (
+                <div className="drow" key={t.name}>
+                  <span className="rid">{t.name}</span>
+                  <span style={{ color: "#8b98a5", flex: 1 }}>{t.description}</span>
+                  <span className="chip c-gray">{t.kind}</span>
+                  {t.high_risk
+                    ? <span className="chip c-amber">HIGH-RISK</span>
+                    : <span className="chip c-green">safe</span>}
+                  {t.version > 1 && <span className="chip c-blue">v{t.version}</span>}
+                  <button className="btn btn-r" style={{ fontSize: 11, padding: "4px 10px" }}
+                          onClick={() => deleteTool(t.name)} title="Delete (blocked while bound to an agent)">✕</button>
+                </div>
+              ))}
+              <div className="dnote" style={{ width: "auto", marginTop: 6 }}>
+                mock tools return their configured response; http tools make real calls behind an SSRF guard
+                (private/loopback targets refused). Executions appear in the audit chain as tool.executed.
+              </div>
+            </div>
+            <div className="card" style={{ padding: "13px 15px", width: "100%" }}>
+              <h3 className="sec" style={{ marginBottom: 8 }}>＋ Add a tool</h3>
+              <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+                <div className="fld" style={{ flex: 1, minWidth: 140 }}><label>NAME</label>
+                  <input className="inp" value={newTool.name} placeholder="crm.lookup" onChange={(e) => setNewTool({ ...newTool, name: e.target.value })} /></div>
+                <div className="fld" style={{ width: 110 }}><label>KIND</label>
+                  <select className="inp" value={newTool.kind} onChange={(e) => setNewTool({ ...newTool, kind: e.target.value })}>
+                    <option value="mock">mock</option>
+                    <option value="http">http</option>
+                  </select></div>
+                <div className="fld" style={{ flex: 2, minWidth: 180 }}><label>DESCRIPTION</label>
+                  <input className="inp" value={newTool.description} onChange={(e) => setNewTool({ ...newTool, description: e.target.value })} /></div>
+              </div>
+              {newTool.kind === "mock" ? (
+                <div className="fld" style={{ marginTop: 8 }}><label>RESPONSE SAMPLE (use {"{input}"} to echo the request)</label>
+                  <input className="inp" value={newTool.response} placeholder="account ACME-4411 · tier gold · open balance $1,204"
+                         onChange={(e) => setNewTool({ ...newTool, response: e.target.value })} /></div>
+              ) : (
+                <div style={{ display: "flex", gap: 9, marginTop: 8, flexWrap: "wrap" }}>
+                  <div className="fld" style={{ flex: 2, minWidth: 200 }}><label>URL (public hosts only)</label>
+                    <input className="inp" value={newTool.url} placeholder="https://api.example.com/lookup"
+                           onChange={(e) => setNewTool({ ...newTool, url: e.target.value })} /></div>
+                  <div className="fld" style={{ width: 100 }}><label>METHOD</label>
+                    <select className="inp" value={newTool.method} onChange={(e) => setNewTool({ ...newTool, method: e.target.value })}>
+                      <option>GET</option><option>POST</option>
+                    </select></div>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+                <label style={{ fontSize: 12, color: "#8b98a5", display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="checkbox" checked={newTool.high_risk} onChange={(e) => setNewTool({ ...newTool, high_risk: e.target.checked })} />
+                  high-risk (binding it forces the agent's deploy through approval)
+                </label>
+                <button className="btn btn-o" style={{ marginLeft: "auto" }} disabled={!newTool.name} onClick={saveTool}>Save tool</button>
+              </div>
+              {msg && <div style={{ fontSize: 11.5, color: msg.startsWith("error") ? "#f87171" : "#34d399", marginTop: 8 }}>{msg}</div>}
+            </div>
+          </div>
+        ) : (
         <div className="stbody">
           <div className="form">
             <div className="fld"><label>NAME</label><input className="inp" value={form.name} placeholder="travel-booker" onChange={(e) => setForm({ ...form, name: e.target.value })} disabled={!!selName} /></div>
@@ -184,6 +270,7 @@ export default function Studio({ tick, onDeployed }: { tick: number; onDeployed:
             </div>
           </div>
         </div>
+        )}
 
         <div className="st-act">
           <div className="st-note">

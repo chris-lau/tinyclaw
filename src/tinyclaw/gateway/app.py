@@ -91,6 +91,48 @@ class GatewayState:
                 if path.stem == scen["name"] and path.exists():
                     self.db.seed_policy_set(scen["name"], path.read_text())
 
+        # Tool registry: default catalog seeds the DB once; the registry is
+        # the source of truth afterwards (configurable, executable, audited).
+        for tool in (
+            (
+                "flights.search",
+                "Search flights (mock)",
+                "mock",
+                {"response": "UA412 SFO→JFK $412 · AA210 $468 · DL88 $521"},
+                False,
+            ),
+            (
+                "calendar.read",
+                "Read calendar events (mock)",
+                "mock",
+                {"response": "3 events today; next: offsite planning 15:00"},
+                False,
+            ),
+            (
+                "policy.lookup",
+                "Look up policy values (mock)",
+                "mock",
+                {"response": "travel cap: $600/trip · procurement tier-2: $5k–$50k"},
+                False,
+            ),
+            ("http.request", "Call an external HTTP endpoint", "http", {"url": "", "method": "GET"}, True),
+            (
+                "email.send",
+                "Send email (mock — outbound comms are high-risk)",
+                "mock",
+                {"response": "queued: message id mq-78123"},
+                True,
+            ),
+            (
+                "payments.refund",
+                "Issue a payment refund (mock — money movement)",
+                "mock",
+                {"response": "refund rq-2043 queued for finance review"},
+                True,
+            ),
+        ):
+            self.db.seed_tool(*tool)
+
     def hook_engine(self):
         """All pack hooks merged (evaluated in declaration order)."""
         return self._hook_engine_cls([h for engine in self.hooks for h in engine.hooks])
@@ -813,19 +855,53 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # ------------------------------------------------------- Agent Studio
 
-    HIGH_RISK_TOOLS = {"email.send", "payments.refund", "http.request", "slack.post"}
-    TOOL_CATALOG = [
-        {"name": "flights.search", "high_risk": False},
-        {"name": "calendar.read", "high_risk": False},
-        {"name": "policy.lookup", "high_risk": False},
-        {"name": "http.request", "high_risk": True},
-        {"name": "email.send", "high_risk": True},
-        {"name": "payments.refund", "high_risk": True},
-    ]
-
     @app.get("/api/studio/tools")
     async def studio_tools() -> list[dict[str, Any]]:
-        return TOOL_CATALOG
+        return gw().db.list_tools()
+
+    @app.post("/api/studio/tools")
+    async def studio_create_tool(body: dict[str, Any]) -> dict[str, Any]:
+        """Add or update a tool in the registry. Kinds: 'mock' (returns the
+        configured response — demos and testing) and 'http' (calls a declared
+        URL at execution time, behind an SSRF guard). All executions audited."""
+        name = (body.get("name") or "").strip().lower().replace(" ", "-").replace("_", "-")
+        if not name or not name.replace("-", "").replace(".", "").isalnum():
+            raise HTTPException(422, "name must be a slug (letters, digits, dashes, dots)")
+        kind = body.get("kind")
+        if kind not in ("mock", "http"):
+            raise HTTPException(422, "kind must be 'mock' or 'http'")
+        config = body.get("config") or {}
+        if kind == "mock" and not str(config.get("response", "")).strip():
+            raise HTTPException(422, "mock tools need a config.response sample")
+        if kind == "http":
+            url = str(config.get("url", ""))
+            if not url.startswith(("http://", "https://")):
+                raise HTTPException(422, "http tools need an absolute config.url")
+        row = gw().db.upsert_tool(
+            name=name,
+            description=body.get("description", ""),
+            kind=kind,
+            config=config,
+            high_risk=bool(body.get("high_risk")),
+            created_by=body.get("created_by", "dashboard"),
+        )
+        await gw().audit(
+            "human:studio", "tool.define", name, f"v{row['version']}", kind=kind, high_risk=bool(body.get("high_risk"))
+        )
+        return {"name": name, "version": row["version"], "kind": kind}
+
+    @app.delete("/api/studio/tools/{name}")
+    async def studio_delete_tool(name: str) -> dict[str, Any]:
+        if not gw().db.get_tool(name):
+            raise HTTPException(404, "unknown tool")
+        # Referenced tools can't be removed — agents depend on them.
+        for d in gw().db.list_agent_defs():
+            bound = {t if isinstance(t, str) else t.get("name") for t in (d["definition"] or {}).get("tools", [])}
+            if name in bound:
+                raise HTTPException(409, f"bound to agent “{d['name']}” — unbind it first")
+        gw().db.delete_tool(name)
+        await gw().audit("human:studio", "tool.delete", name, "hard")
+        return {"deleted": name}
 
     @app.get("/api/studio/agents")
     async def studio_agents() -> list[dict[str, Any]]:
@@ -845,8 +921,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"name": name, "version": version, "status": "draft"}
 
     def _definition_is_high_risk(definition: dict[str, Any]) -> bool:
-        tools = {t if isinstance(t, str) else t.get("name", "") for t in definition.get("tools", [])}
-        return bool(tools & HIGH_RISK_TOOLS) or definition.get("risk_class") in ("tier2", "tier3", "always_human")
+        bound = {t if isinstance(t, str) else t.get("name", "") for t in definition.get("tools", [])}
+        risky = {t["name"] for t in gw().db.list_tools() if t["high_risk"]}
+        return bool(bound & risky) or definition.get("risk_class") in ("tier2", "tier3", "always_human")
 
     async def _deploy_agent_def(name: str, approver: str | None) -> dict[str, Any]:
         """Mark live and ask the runtime supervisor to host a real process."""
