@@ -95,6 +95,7 @@ export default function App() {
               {(health?.scenarios ?? []).map((s: string) => (
                 <option key={s} value={s}>{s}</option>
               ))}
+              <option value="studio">studio · agent deploys</option>
             </select>
           </div>
           <div className="pill pill-llm">
