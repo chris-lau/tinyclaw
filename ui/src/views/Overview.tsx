@@ -85,7 +85,7 @@ export default function Overview({ live, tick, scenario, onOpenTask }: { live: a
                     <div className="tk" key={t.task_id} onClick={onOpenTask} title={t.title}>
                       <div className="r1">
                         <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                          {t.scenario && t.scenario !== "procurement" && (
+                          {t.scenario && (
                             <span className="chip c-blue" style={{ fontSize: 8.5, padding: "1px 5px" }}>{t.scenario}</span>
                           )}
                           <span className="mono" style={{ fontSize: 11 }}>{t.task_id.slice(0, 8)}</span>

@@ -50,7 +50,7 @@ export default function Tasks({ tick, live, scenario }: { tick: number; live: an
           <div className="trow" key={t.task_id} onClick={() => setSel(t.task_id)}>
             <div>
               <div className="ttl" style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                {t.scenario !== "procurement" && <span className="chip c-blue" style={{ fontSize: 8.5, padding: "1px 5px", flexShrink: 0 }}>{t.scenario}</span>}
+                {t.scenario && <span className="chip c-blue" style={{ fontSize: 8.5, padding: "1px 5px", flexShrink: 0 }}>{t.scenario}</span>}
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.title}</span>
               </div>
               <div className="sub mono">{t.task_id.slice(0, 13)}… · trace {t.trace_id ? t.trace_id.slice(0, 10) : "—"}</div>
