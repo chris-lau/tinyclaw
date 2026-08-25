@@ -8,6 +8,7 @@ export default function Approvals({ tick, scenario, onDecided }: { tick: number;
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [box, setBox] = useState<"pending" | "resolved">("pending");
 
   useEffect(() => {
     api.approvals("pending").then((p) => {
@@ -46,30 +47,45 @@ export default function Approvals({ tick, scenario, onDecided }: { tick: number;
     <div className="ap-wrap" style={{ flex: 1, minHeight: 0 }}>
       <div className="card inbox">
         <div className="itabs">
-          <div className="itab on">Pending ({pending.length})</div>
-          <div className="itab" style={{ cursor: "default" }}>Resolved</div>
+          <div className={`itab ${box === "pending" ? "on" : ""}`} onClick={() => setBox("pending")}>
+            Pending ({pending.filter(inScenario).length})
+          </div>
+          <div className={`itab ${box === "resolved" ? "on" : ""}`} onClick={() => setBox("resolved")}>
+            Resolved ({resolved.filter((a) => a.status !== "pending" && inScenario(a)).length})
+          </div>
         </div>
         <div className="ilist">
-          {pending.filter(inScenario).map((a) => (
-            <div className={`item ${a.id === sel?.id ? "sel" : ""}`} key={a.id} onClick={() => setSelId(a.id)}>
-              <div className="r1"><span className="id">{a.subject?.slice(0, 30)}</span><span className="amt">{a.amount != null ? money(a.amount) : ""}</span></div>
-              <div className="ttl">{a.scenario} · tier {a.tier}</div>
-              <div className="ft">
-                <span className="chip c-amber">{a.action}</span>
-                <span className="ago">{new Date(a.ts * 1000).toLocaleTimeString()}</span>
-              </div>
-            </div>
-          ))}
-          {pending.length === 0 && <div className="empty">inbox clear — nothing waiting on a human</div>}
-          {resolved.filter((a) => a.status !== "pending" && inScenario(a)).slice(0, 6).map((a) => (
-            <div className="item dim" key={a.id}>
-              <div className="r1"><span className="id">{a.subject?.slice(0, 30)}</span><span className="amt">{a.amount != null ? money(a.amount) : ""}</span></div>
-              <div className="ft">
-                <span className={`chip ${a.status === "approved" ? "c-green" : "c-red"}`}>{a.status}</span>
-                <span className="ago">{a.decided_by ? `by ${a.decided_by}` : ""}</span>
-              </div>
-            </div>
-          ))}
+          {box === "pending" ? (
+            <>
+              {pending.filter(inScenario).map((a) => (
+                <div className={`item ${a.id === sel?.id ? "sel" : ""}`} key={a.id} onClick={() => setSelId(a.id)}>
+                  <div className="r1"><span className="id">{a.subject?.slice(0, 30)}</span><span className="amt">{a.amount != null ? money(a.amount) : ""}</span></div>
+                  <div className="ttl">{a.scenario} · tier {a.tier}</div>
+                  <div className="ft">
+                    <span className="chip c-amber">{a.action}</span>
+                    <span className="ago">{new Date(a.ts * 1000).toLocaleTimeString()}</span>
+                  </div>
+                </div>
+              ))}
+              {pending.filter(inScenario).length === 0 && <div className="empty">inbox clear — nothing waiting on a human</div>}
+            </>
+          ) : (
+            <>
+              {resolved.filter((a) => a.status !== "pending" && inScenario(a)).map((a) => (
+                <div className="item" key={a.id} title={a.comment || undefined}>
+                  <div className="r1"><span className="id">{a.subject?.slice(0, 30)}</span><span className="amt">{a.amount != null ? money(a.amount) : ""}</span></div>
+                  <div className="ttl">{a.scenario} · tier {a.tier}</div>
+                  <div className="ft">
+                    <span className={`chip ${a.status === "approved" ? "c-green" : "c-red"}`}>{a.status}</span>
+                    <span className="ago">{a.decided_by ? `by ${a.decided_by}` : ""} · {a.decided_at ? new Date(a.decided_at * 1000).toLocaleTimeString() : ""}</span>
+                  </div>
+                </div>
+              ))}
+              {resolved.filter((a) => a.status !== "pending" && inScenario(a)).length === 0 && (
+                <div className="empty">nothing decided yet</div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
