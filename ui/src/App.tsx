@@ -25,6 +25,7 @@ export default function App() {
   const [tick, setTick] = useState(0);
   const [posture, setPosture] = useState<string>("balanced");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [scenarioFilter, setScenarioFilter] = useState<string>("all");
 
   function navigate(v: View) {
     setView(v);
@@ -83,13 +84,18 @@ export default function App() {
               <option value="full">full autonomy</option>
             </select>
           </div>
-          <div
-            className="pill pill-scenario"
-            style={{ cursor: "pointer" }}
-            title="Choose scenario and submit requests in Playground"
-            onClick={() => setView("playground")}
-          >
-            Scenario: <b>{health?.scenarios?.[0] ?? "—"}</b> <span style={{ color: "#5d6b7a" }}>▸</span>
+          <div className="pill pill-scenario" title="Filter every list view by scenario">
+            <span className="posture-label">Scenario:&nbsp;</span>
+            <select
+              value={scenarioFilter}
+              onChange={(e) => setScenarioFilter(e.target.value)}
+              style={{ background: "transparent", border: "none", color: "#38bdf8", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+            >
+              <option value="all">all</option>
+              {(health?.scenarios ?? []).map((s: string) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           </div>
           <div className="pill pill-llm">
             {health?.llm ?? "…"} {health?.llm === "mock" ? "· mock mode" : ""}
@@ -106,11 +112,11 @@ export default function App() {
         </div>
       </div>
       <div className="content">
-        {view === "overview" && <Overview live={live} tick={tick} onOpenTask={() => setView("tasks")} />}
-        {view === "tasks" && <Tasks tick={tick} live={live} />}
-        {view === "approvals" && <Approvals tick={tick} onDecided={bump} />}
+        {view === "overview" && <Overview live={live} tick={tick} scenario={scenarioFilter} onOpenTask={() => setView("tasks")} />}
+        {view === "tasks" && <Tasks tick={tick} live={live} scenario={scenarioFilter} />}
+        {view === "approvals" && <Approvals tick={tick} scenario={scenarioFilter} onDecided={bump} />}
         {view === "studio" && <Studio tick={tick} onDeployed={bump} />}
-        {view === "governance" && <Governance tick={tick} live={live} />}
+        {view === "governance" && <Governance tick={tick} scenario={scenarioFilter} live={live} />}
         {view === "playground" && <Playground onSubmitted={bump} />}
       </div>
     </div>

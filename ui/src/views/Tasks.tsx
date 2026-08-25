@@ -15,7 +15,7 @@ function stateChip(state: string) {
   return <span className={`chip ${cls}`}>{label}</span>;
 }
 
-export default function Tasks({ tick, live }: { tick: number; live: any[] }) {
+export default function Tasks({ tick, live, scenario }: { tick: number; live: any[]; scenario: string }) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [sel, setSel] = useState<string | null>(null);
   const [detail, setDetail] = useState<any>(null);
@@ -30,23 +30,29 @@ export default function Tasks({ tick, live }: { tick: number; live: any[] }) {
   }, [sel, tick, live.length]);
 
   if (sel && detail) return <TaskDetail detail={detail} onBack={() => setSel(null)} />;
+  const visible = tasks.filter((t) => scenario === "all" || t.scenario === scenario);
 
   return (
     <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div className="table-hdr">
         <div>
           <div style={{ fontSize: 15.5, fontWeight: 700 }}>Tasks</div>
-          <div className="sub" style={{ color: "#8b98a5", fontSize: 11.5 }}>every request, its route through the agent mesh</div>
+          <div className="sub" style={{ color: "#8b98a5", fontSize: 11.5 }}>
+            {scenario === "all" ? "every request, its route through the agent mesh" : `requests in scenario: ${scenario}`}
+          </div>
         </div>
       </div>
       <div className="rowlist" style={{ flex: 1 }}>
         <div className="trow" style={{ cursor: "default", color: "#5d6b7a", fontSize: 11, textTransform: "uppercase", letterSpacing: ".6px" }}>
           <span>Request</span><span>Amount</span><span>Stage</span><span>State</span><span>Requester</span><span>Updated</span>
         </div>
-        {tasks.map((t) => (
+        {visible.map((t) => (
           <div className="trow" key={t.task_id} onClick={() => setSel(t.task_id)}>
             <div>
-              <div className="ttl">{t.title}</div>
+              <div className="ttl" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                {t.scenario !== "procurement" && <span className="chip c-blue" style={{ fontSize: 8.5, padding: "1px 5px", flexShrink: 0 }}>{t.scenario}</span>}
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.title}</span>
+              </div>
               <div className="sub mono">{t.task_id.slice(0, 13)}… · trace {t.trace_id ? t.trace_id.slice(0, 10) : "—"}</div>
             </div>
             <div style={{ fontWeight: 600 }}>{money(t.amount)}</div>
@@ -56,7 +62,7 @@ export default function Tasks({ tick, live }: { tick: number; live: any[] }) {
             <div style={{ color: "#5d6b7a", fontSize: 11 }}>{ago(t.updated_at)}</div>
           </div>
         ))}
-        {tasks.length === 0 && <div className="empty">no tasks yet — submit some from the Playground</div>}
+        {visible.length === 0 && <div className="empty">no tasks{scenario !== "all" ? ` in ${scenario}` : " yet"} — submit some from the Playground</div>}
       </div>
     </div>
   );

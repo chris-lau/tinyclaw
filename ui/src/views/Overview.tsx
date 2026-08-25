@@ -20,7 +20,7 @@ function stateChip(state: string) {
   return <span className={`chip ${cls}`}>{label}</span>;
 }
 
-export default function Overview({ live, tick, onOpenTask }: { live: any[]; tick: number; onOpenTask: () => void }) {
+export default function Overview({ live, tick, scenario, onOpenTask }: { live: any[]; tick: number; scenario: string; onOpenTask: () => void }) {
   const [kpis, setKpis] = useState<any>(null);
   const [tasks, setTasks] = useState<any[]>([]);
   const [fleet, setFleet] = useState<any[]>([]);
@@ -64,10 +64,16 @@ export default function Overview({ live, tick, onOpenTask }: { live: any[]; tick
 
       <div className="main2">
         <div className="card pipe">
-          <h3 className="sec" style={{ marginBottom: 11 }}>Live pipeline — requests across all scenarios</h3>
+          <h3 className="sec" style={{ marginBottom: 11 }}>
+            Live pipeline — {scenario === "all" ? "requests across all scenarios" : `scenario: ${scenario}`}
+          </h3>
           <div className="stages">
             {STAGES.map((s) => {
-              const inStage = tasks.filter((t) => t.stage === s.stage && !["rejected", "denied", "failed", "blocked"].includes(t.state));
+              const inStage = tasks.filter(
+                (t) => t.stage === s.stage
+                && (scenario === "all" || t.scenario === scenario)
+                && !["rejected", "denied", "failed", "blocked"].includes(t.state),
+              );
               return (
                 <div className="stage" key={s.stage}>
                   <div className="stg-h">
@@ -132,15 +138,17 @@ export default function Overview({ live, tick, onOpenTask }: { live: any[]; tick
 
           <div className="card fleet-card" style={{ padding: "13px 14px" }}>
             <h3 className="sec" style={{ marginBottom: 7 }}>Agent fleet</h3>
-            {fleet.map((a, i) => (
-              <div className="fl" key={i}>
-                <span className="dot" style={{ background: AGENT_COLORS[a.card?.name] ?? (a.live ? "#34d399" : "#5d6b7a") }} />
-                <span className="nm">{a.card?.name ?? "?"}</span>
-                {a.studio && <span className={`chip ${a.live ? "c-green" : "c-gray"}`}>{a.status ?? (a.live ? "live" : "draft")}</span>}
-                {!a.studio && <span className={`chip ${a.live ? "c-green" : "c-red"}`}>{a.live ? "Live" : "Down"}</span>}
-                <span className="lat">{a.card?.version ? `v${a.card.version}` : ""}</span>
-              </div>
-            ))}
+            {fleet
+              .filter((a) => scenario === "all" || a.scenario === scenario)
+              .map((a, i) => (
+                <div className="fl" key={i}>
+                  <span className="dot" style={{ background: AGENT_COLORS[a.card?.name] ?? (a.live ? "#34d399" : "#5d6b7a") }} />
+                  <span className="nm">{a.card?.name ?? "?"}</span>
+                  {a.studio && <span className={`chip ${a.live ? "c-green" : "c-gray"}`}>{a.status ?? (a.live ? "live" : "draft")}</span>}
+                  {!a.studio && <span className={`chip ${a.live ? "c-green" : "c-red"}`}>{a.live ? "Live" : "Down"}</span>}
+                  <span className="lat">{a.card?.version ? `v${a.card.version}` : ""}</span>
+                </div>
+              ))}
           </div>
         </div>
       </div>

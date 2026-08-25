@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, money } from "../api";
 
-export default function Approvals({ tick, onDecided }: { tick: number; onDecided: () => void }) {
+export default function Approvals({ tick, scenario, onDecided }: { tick: number; scenario: string; onDecided: () => void }) {
   const [pending, setPending] = useState<any[]>([]);
   const [resolved, setResolved] = useState<any[]>([]);
   const [selId, setSelId] = useState<string | null>(null);
@@ -17,7 +17,8 @@ export default function Approvals({ tick, onDecided }: { tick: number; onDecided
     api.approvals().then(setResolved).catch(() => {});
   }, [tick]);
 
-  const sel = pending.find((a) => a.id === selId) ?? pending[0];
+  const inScenario = (a: any) => scenario === "all" || a.scenario === scenario;
+  const sel = pending.filter(inScenario).find((a) => a.id === selId) ?? pending.filter(inScenario)[0];
 
   async function decide(decision: "approve" | "reject") {
     if (!sel) return;
@@ -49,7 +50,7 @@ export default function Approvals({ tick, onDecided }: { tick: number; onDecided
           <div className="itab" style={{ cursor: "default" }}>Resolved</div>
         </div>
         <div className="ilist">
-          {pending.map((a) => (
+          {pending.filter(inScenario).map((a) => (
             <div className={`item ${a.id === sel?.id ? "sel" : ""}`} key={a.id} onClick={() => setSelId(a.id)}>
               <div className="r1"><span className="id">{a.subject?.slice(0, 30)}</span><span className="amt">{a.amount != null ? money(a.amount) : ""}</span></div>
               <div className="ttl">{a.scenario} · tier {a.tier}</div>
@@ -60,7 +61,7 @@ export default function Approvals({ tick, onDecided }: { tick: number; onDecided
             </div>
           ))}
           {pending.length === 0 && <div className="empty">inbox clear — nothing waiting on a human</div>}
-          {resolved.filter((a) => a.status !== "pending").slice(0, 6).map((a) => (
+          {resolved.filter((a) => a.status !== "pending" && inScenario(a)).slice(0, 6).map((a) => (
             <div className="item dim" key={a.id}>
               <div className="r1"><span className="id">{a.subject?.slice(0, 30)}</span><span className="amt">{a.amount != null ? money(a.amount) : ""}</span></div>
               <div className="ft">

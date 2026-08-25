@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, fmtClock } from "../api";
 
-export default function Governance({ tick }: { tick: number; live: any[] }) {
+export default function Governance({ tick, scenario }: { tick: number; scenario: string; live: any[] }) {
   const [audit, setAudit] = useState<any[]>([]);
   const [verify, setVerify] = useState<any>(null);
   const [policies, setPolicies] = useState<any[]>([]);
@@ -12,24 +12,35 @@ export default function Governance({ tick }: { tick: number; live: any[] }) {
     api.policies().then(setPolicies).catch(() => {});
   }, [tick]);
 
+  const inScenario = (p: any) => scenario === "all" || p.scenario === scenario;
+  // policy rule sets (not risk/identity/hooks): every pack's main policy file
+  const ruleSets = policies.filter((p) => /policies\/(procurement|support)\.yaml$/.test(p.file) && inScenario(p));
+
   return (
     <div className="gv-grid">
       <div className="gv-col">
         <div className="card gv-card" style={{ flex: 1 }}>
           <h3 className="sec" style={{ marginBottom: 8 }}>Policy rules (as code)</h3>
-          {policies.filter((p) => p.file.endsWith("procurement.yaml")).map((p) =>
-            (p.yaml?.policies ?? []).map((r: any) => (
-              <div className="drow" key={r.id}>
-                <span className="rid">{r.id}</span>
-                <span style={{ color: "#8b98a5", flex: 1, minWidth: 160 }}>{r.description}</span>
-                <span className={`chip ${r.effect === "deny" ? "c-red" : r.effect === "require_approval" ? "c-amber" : "c-green"}`}>{r.effect}</span>
-              </div>
-            )),
+          {ruleSets.flatMap((p) =>
+            [{ header: p.scenario }].concat((p.yaml?.policies ?? []) as any[]).map((r: any, i: number) =>
+              r.header ? (
+                <div key={`${p.scenario}-h`} className="drow" style={{ paddingBottom: 2 }}>
+                  <span className="chip c-blue" style={{ fontSize: 9.5 }}>{r.header}</span>
+                </div>
+              ) : (
+                <div className="drow" key={`${p.scenario}-${r.id}-${i}`}>
+                  <span className="rid">{r.id}</span>
+                  <span style={{ color: "#8b98a5", flex: 1, minWidth: 160 }}>{r.description}</span>
+                  <span className={`chip ${r.effect === "deny" ? "c-red" : r.effect === "require_approval" ? "c-amber" : "c-green"}`}>{r.effect}</span>
+                </div>
+              ),
+            ),
           )}
           <h3 className="sec" style={{ margin: "14px 0 8px" }}>Risk registry</h3>
-          {policies.filter((p) => p.file.endsWith("risk.yaml")).map((p) =>
+          {policies.filter((p) => p.file.endsWith("risk.yaml") && inScenario(p)).map((p) =>
             Object.entries(p.yaml?.actions ?? {}).map(([name, spec]: any) => (
-              <div className="drow" key={name}>
+              <div className="drow" key={`${p.scenario}-${name}`}>
+                {scenario === "all" && <span className="chip c-blue" style={{ fontSize: 9.5, flexShrink: 0 }}>{p.scenario}</span>}
                 <span className="rid">{name}</span>
                 <span style={{ color: "#8b98a5", flex: 1 }}>{spec.description}</span>
                 <span className={`chip ${spec.risk_class === "blocked" ? "c-red" : spec.risk_class === "auto" ? "c-green" : "c-amber"}`}>{spec.risk_class}</span>
@@ -37,9 +48,9 @@ export default function Governance({ tick }: { tick: number; live: any[] }) {
             )),
           )}
           <h3 className="sec" style={{ margin: "14px 0 8px" }}>Agent identities &amp; scopes</h3>
-          {policies.filter((p) => p.file.endsWith("identity.yaml")).map((p) =>
+          {policies.filter((p) => p.file.endsWith("identity.yaml") && inScenario(p)).map((p) =>
             Object.entries(p.yaml?.agents ?? {}).map(([name, spec]: any) => (
-              <div className="drow" key={name}>
+              <div className="drow" key={`${p.scenario}-${name}`}>
                 <span className="rid">{name}</span>
                 <span style={{ flex: 1, display: "flex", gap: 5, flexWrap: "wrap" }}>
                   {(spec.scopes ?? []).map((s: string) => <span key={s} className="chip c-blue">{s}</span>)}

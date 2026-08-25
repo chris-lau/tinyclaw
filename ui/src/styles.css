@@ -240,7 +240,7 @@ a { color: var(--intake); }
   .topnav { flex-wrap: wrap; height: auto; min-height: 52px; padding: 8px 12px; gap: 6px 10px; position: relative; }
   .logo { font-size: 14px; }
   .nr { gap: 6px; }
-  .pill-scenario, .pill-llm { display: none; }
+  .pill-llm { display: none; }
 
   /* Hamburger: tabs live in a dropdown panel with real touch targets */
   .menu-btn {
