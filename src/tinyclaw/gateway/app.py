@@ -524,7 +524,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 result["task_state"] = r.state
                 result["reply"] = r.reply_text[:500]
             except Exception as exc:
+                # Resume failed (typically: the orchestrator's task store was
+                # reset by a redeploy since the task parked). Reconcile to an
+                # honest terminal state instead of leaving a fossil that looks
+                # pending forever. Documented in docs/deployment.md.
                 result["resume_error"] = str(exc)
+                gw().db.upsert_task({
+                    "task_id": approval["task_id"], "context_id": approval.get("context_id"),
+                    "scenario": approval.get("scenario"), "title": approval.get("subject") or "",
+                    "amount": approval.get("amount"),
+                    "state": "rejected" if decision == "reject" else "failed",
+                    "stage": "stale", "current_agent": "gateway",
+                })
+                await gw().audit("gateway", "task.reconciled", approval["task_id"],
+                                 "rejected" if decision == "reject" else "failed",
+                                 reason=f"resume failed: {str(exc)[:120]}")
         await gw().broadcast(
             {
                 "id": uuid.uuid4().hex[:8],
@@ -536,6 +550,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
         )
         return result
+
+    @app.post("/api/admin/reconcile")
+    async def reconcile_stale() -> dict[str, Any]:
+        """Sweep for fossils: tasks in input_required whose approval is already
+        decided (resume failed across a redeploy). Marks them with the honest
+        terminal state so nothing looks pending when it isn't."""
+        approvals_by_task = {a["task_id"]: a for a in gw().db.list_approvals()}
+        fixed: list[dict[str, Any]] = []
+        for t in gw().db.list_tasks(500):
+            if t["state"] != "input_required":
+                continue
+            ap = approvals_by_task.get(t["task_id"])
+            if not ap or ap["status"] == "pending":
+                continue
+            new_state = "rejected" if ap["status"] == "rejected" else "failed"
+            gw().db.upsert_task({**t, "state": new_state, "stage": "stale", "current_agent": "gateway"})
+            await gw().audit("gateway", "task.reconciled", t["task_id"], new_state,
+                             prior="input_required", approval=ap["status"])
+            fixed.append({"task_id": t["task_id"], "title": t["title"], "state": new_state})
+        return {"reconciled": fixed}
 
     @app.get("/api/audit")
     async def audit(limit: int = 200) -> list[dict[str, Any]]:

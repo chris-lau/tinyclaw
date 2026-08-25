@@ -71,6 +71,38 @@ export default function Tasks({ tick, live, scenario }: { tick: number; live: an
 function TaskDetail({ detail, onBack }: { detail: any; onBack: () => void }) {
   const t = detail.task;
   const events: any[] = detail.events ?? [];
+  const [approval, setApproval] = useState<any>(null);
+  const [approvalLoaded, setApprovalLoaded] = useState(false);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  useEffect(() => {
+    setApproval(null);
+    setApprovalLoaded(false);
+    if (t.state === "input_required") {
+      api.approvals("pending")
+        .then((list: any[]) => setApproval(list.find((a) => a.task_id === t.task_id) ?? null))
+        .catch(() => {})
+        .finally(() => setApprovalLoaded(true));
+    } else {
+      setApprovalLoaded(true);
+    }
+  }, [t.task_id, t.state, t.updated_at]);
+
+  async function decide(d: "approve" | "reject") {
+    if (!approval) return;
+    setBusy(true);
+    try {
+      const r = await api.decide(approval.id, { decision: d, approver: "chris", comment });
+      setFlash(d === "approve" ? `Approved — task ${r.task_state ?? "resuming"}` : "Rejected");
+      setComment("");
+    } catch (e: any) {
+      setFlash(`error: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
   const hopEvents = events.filter((e) => e.type === "a2a.hop");
   const policyEvents = events.filter((e) => e.type === "policy.decision");
   const guardEvents = events.filter((e) => e.type === "guardrail.hit");
@@ -116,6 +148,30 @@ function TaskDetail({ detail, onBack }: { detail: any; onBack: () => void }) {
           )}
         </div>
       </div>
+
+      {t.state === "input_required" && approvalLoaded && (
+        <div className="card" style={{ padding: "12px 18px" }}>
+          {approval ? (
+            <div className="dact" style={{ borderTop: "none", padding: 0 }}>
+              <div className="cmt" style={{ flex: 1 }}>
+                <input
+                  className="cmt" style={{ border: "none", background: "transparent", padding: 0, width: "100%" }}
+                  placeholder="Add a comment (stored with your decision)…"
+                  value={comment} onChange={(e) => setComment(e.target.value)}
+                />
+              </div>
+              <button className="btn btn-g" disabled={busy} onClick={() => decide("approve")}>✓ Approve &amp; execute</button>
+              <button className="btn btn-r" disabled={busy} onClick={() => decide("reject")}>✕ Reject</button>
+            </div>
+          ) : (
+            <div className="dnote" style={{ width: "auto" }}>
+              ⚠ approval already decided, but the task could not resume (the orchestrator restarted since it
+              parked — see docs/deployment.md). This state is terminal; resubmit the request if needed.
+            </div>
+          )}
+          {flash && <div style={{ fontSize: 12, color: "#34d399", marginTop: 8 }}>{flash}</div>}
+        </div>
+      )}
 
       <div className="tdetail" style={{ flex: 1, minHeight: 0 }}>
         <div className="card tl-col">
