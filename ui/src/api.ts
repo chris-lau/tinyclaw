@@ -25,6 +25,19 @@ export const api = {
   approvals: (status?: string) => j(`/api/approvals${status ? `?status=${status}` : ""}`),
   decide: (id: string, body: any) => j(`/api/approvals/${id}/decision`, { method: "POST", body: JSON.stringify(body) }),
   audit: (limit = 200) => j(`/api/audit?limit=${limit}`),
+  auditFiltered: (f: { actor?: string; action?: string; decision?: string; q?: string }) => {
+    const p = new URLSearchParams({ limit: "300" });
+    if (f.actor) p.set("actor", f.actor);
+    if (f.action) p.set("action", f.action);
+    if (f.decision) p.set("decision", f.decision);
+    if (f.q) p.set("q", f.q);
+    return j(`/api/audit?${p.toString()}`);
+  },
+  getPolicySet: (scenario: string) => j(`/api/policy-sets/${scenario}`),
+  putPolicySet: (scenario: string, yaml: string) =>
+    j(`/api/policy-sets/${scenario}`, { method: "PUT", body: JSON.stringify({ yaml, updated_by: "dashboard" }) }),
+  testPolicySet: (scenario: string, yaml: string | null, payload: any, posture = "balanced") =>
+    j(`/api/policy-sets/${scenario}/test`, { method: "POST", body: JSON.stringify({ yaml: yaml ?? undefined, payload, posture }) }),
   auditVerify: () => j("/api/audit/verify"),
   events: (limit = 120) => j(`/api/events?limit=${limit}`),
   kpis: () => j("/api/kpis"),

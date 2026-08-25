@@ -84,6 +84,12 @@ class GatewayState:
                 path = scen["dir"] / rel
                 if path.name == "hooks.yaml" and path.exists():
                     self.hooks.append(HookEngine.from_yaml(path))
+                # Editable policy sets: the pack file seeds the DB once; after
+                # that the DB is the source of truth (hot-reload + audit + it
+                # survives redeploys, which ephemeral container files don't).
+                # Convention: policies/<scenario-name>.yaml is the editable set.
+                if path.stem == scen["name"] and path.exists():
+                    self.db.seed_policy_set(scen["name"], path.read_text())
 
     def hook_engine(self):
         """All pack hooks merged (evaluated in declaration order)."""
@@ -529,16 +535,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 # honest terminal state instead of leaving a fossil that looks
                 # pending forever. Documented in docs/deployment.md.
                 result["resume_error"] = str(exc)
-                gw().db.upsert_task({
-                    "task_id": approval["task_id"], "context_id": approval.get("context_id"),
-                    "scenario": approval.get("scenario"), "title": approval.get("subject") or "",
-                    "amount": approval.get("amount"),
-                    "state": "rejected" if decision == "reject" else "failed",
-                    "stage": "stale", "current_agent": "gateway",
-                })
-                await gw().audit("gateway", "task.reconciled", approval["task_id"],
-                                 "rejected" if decision == "reject" else "failed",
-                                 reason=f"resume failed: {str(exc)[:120]}")
+                gw().db.upsert_task(
+                    {
+                        "task_id": approval["task_id"],
+                        "context_id": approval.get("context_id"),
+                        "scenario": approval.get("scenario"),
+                        "title": approval.get("subject") or "",
+                        "amount": approval.get("amount"),
+                        "state": "rejected" if decision == "reject" else "failed",
+                        "stage": "stale",
+                        "current_agent": "gateway",
+                    }
+                )
+                await gw().audit(
+                    "gateway",
+                    "task.reconciled",
+                    approval["task_id"],
+                    "rejected" if decision == "reject" else "failed",
+                    reason=f"resume failed: {str(exc)[:120]}",
+                )
         await gw().broadcast(
             {
                 "id": uuid.uuid4().hex[:8],
@@ -566,14 +581,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 continue
             new_state = "rejected" if ap["status"] == "rejected" else "failed"
             gw().db.upsert_task({**t, "state": new_state, "stage": "stale", "current_agent": "gateway"})
-            await gw().audit("gateway", "task.reconciled", t["task_id"], new_state,
-                             prior="input_required", approval=ap["status"])
+            await gw().audit(
+                "gateway", "task.reconciled", t["task_id"], new_state, prior="input_required", approval=ap["status"]
+            )
             fixed.append({"task_id": t["task_id"], "title": t["title"], "state": new_state})
         return {"reconciled": fixed}
 
     @app.get("/api/audit")
-    async def audit(limit: int = 200) -> list[dict[str, Any]]:
-        return gw().db.audit_entries(limit)
+    async def audit(
+        limit: int = 200,
+        actor: str | None = None,
+        action: str | None = None,
+        decision: str | None = None,
+        task_id: str | None = None,
+        q: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Audit log with optional filters: exact actor/action/decision/task,
+        plus `q` free-text over action, subject, and details."""
+        entries = gw().db.audit_entries(min(limit, 1000))
+        if actor:
+            entries = [e for e in entries if actor in (e.get("actor") or "")]
+        if action:
+            entries = [e for e in entries if action in (e.get("action") or "")]
+        if decision:
+            entries = [e for e in entries if e.get("decision") == decision]
+        if task_id:
+            entries = [e for e in entries if e.get("subject") == task_id or e.get("id") == task_id]
+        if q:
+            needle = q.lower()
+            entries = [
+                e
+                for e in entries
+                if needle in (e.get("action") or "").lower()
+                or needle in (e.get("subject") or "").lower()
+                or needle in json.dumps(e.get("details") or {}).lower()
+                or needle in (e.get("actor") or "").lower()
+            ]
+        return entries
 
     @app.get("/api/audit/verify")
     async def audit_verify() -> dict[str, Any]:
@@ -628,13 +672,112 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/policies")
     async def policies() -> list[dict[str, Any]]:
+        """Policy metadata — the editable sets come from the DB (source of
+        truth after seeding), risk/identity/hooks remain pack files."""
         out: list[dict[str, Any]] = []
+        db_sets = {s["scenario"]: s for s in _all_policy_sets(gw())}
         for scen in gw().scenarios.values():
             for rel in scen.get("policies", []):
                 path: Path = scen["dir"] / rel
-                if path.exists():
-                    out.append({"scenario": scen["name"], "file": rel, "yaml": yaml.safe_load(path.read_text())})
+                set_row = db_sets.get(scen["name"]) if path.stem == scen["name"] else None
+                source: dict[str, Any] | None = None
+                if set_row is not None:
+                    source = yaml.safe_load(set_row["yaml"])
+                elif path.exists():
+                    source = yaml.safe_load(path.read_text())
+                if source is not None:
+                    out.append(
+                        {
+                            "scenario": scen["name"],
+                            "file": rel,
+                            "yaml": source,
+                            "editable": set_row is not None,
+                            "version": set_row["version"] if set_row else None,
+                            "updated_by": set_row["updated_by"] if set_row else None,
+                        }
+                    )
         return out
+
+    # ------------------------------------------------- editable policy sets
+
+    def _all_policy_sets(gw_state: GatewayState) -> list[dict[str, Any]]:
+        out = []
+        for scen in gw_state.scenarios:
+            row = gw_state.db.get_policy_set(scen)
+            if row:
+                out.append(row)
+        return out
+
+    def _require_policy_scenario(scenario: str) -> None:
+        if scenario not in gw().scenarios:
+            raise HTTPException(404, f"unknown scenario {scenario!r}")
+        if gw().db.get_policy_set(scenario) is None:
+            raise HTTPException(404, f"scenario {scenario!r} has no editable policy set")
+
+    @app.get("/api/policy-sets/{scenario}")
+    async def get_policy_set(scenario: str) -> dict[str, Any]:
+        _require_policy_scenario(scenario)
+        row = gw().db.get_policy_set(scenario)
+        return {
+            "scenario": scenario,
+            "yaml": row["yaml"],
+            "version": row["version"],
+            "updated_by": row["updated_by"],
+            "updated_at": row["updated_at"],
+        }
+
+    @app.put("/api/policy-sets/{scenario}")
+    async def put_policy_set(scenario: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Edit the scenario's policy set. Validated server-side, versioned,
+        audited, and effective on the next evaluation (agents read per-eval)."""
+        _require_policy_scenario(scenario)
+        yaml_text = body.get("yaml", "")
+        updated_by = body.get("updated_by", "dashboard")
+        try:
+            parsed = yaml.safe_load(yaml_text)
+        except yaml.YAMLError as exc:
+            raise HTTPException(422, f"invalid YAML: {exc}") from exc
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("policies", []), list):
+            raise HTTPException(422, "policy set must be a mapping with a 'policies' list")
+        from ..core.governance.policy import PolicyEngine
+
+        try:
+            engine = PolicyEngine.from_text(yaml_text)
+        except Exception as exc:
+            raise HTTPException(422, f"policy set failed to compile: {exc}") from exc
+        if not engine.rules:
+            raise HTTPException(422, "policy set has no rules")
+
+        row = gw().db.update_policy_set(scenario, yaml_text, updated_by)
+        await gw().audit(
+            f"human:{updated_by}", "policy.update", scenario, f"v{row['version']}", rules=len(engine.rules)
+        )
+        await gw().broadcast(
+            {
+                "id": uuid.uuid4().hex[:8],
+                "ts": time.time(),
+                "type": "policy.updated",
+                "agent": "gateway",
+                "data": {"scenario": scenario, "version": row["version"]},
+            }
+        )
+        return {"scenario": scenario, "version": row["version"], "rules": len(engine.rules)}
+
+    @app.post("/api/policy-sets/{scenario}/test")
+    async def test_policy_set(scenario: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Dry-run: evaluate a draft (or the saved set) against a sample payload."""
+        from ..core.governance.policy import PolicyEngine
+
+        yaml_text = body.get("yaml")
+        if yaml_text is None:
+            _require_policy_scenario(scenario)
+            yaml_text = gw().db.get_policy_set(scenario)["yaml"]
+        try:
+            engine = PolicyEngine.from_text(yaml_text)
+        except Exception as exc:
+            raise HTTPException(422, f"policy set failed to compile: {exc}") from exc
+        d = engine.evaluate(body.get("payload", {}), posture=body.get("posture", "balanced"))
+        return {"effect": d.effect.value, "tier": d.tier, "hits": [h.rule.id for h in d.hits], "summary": d.summary()}
 
     @app.post("/api/playground/submit")
     async def playground_submit(body: dict[str, Any]) -> list[dict[str, Any]]:

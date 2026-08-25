@@ -136,6 +136,12 @@ with keys created in the local UI.
 
 Deliberately deferred — each is scoped, none changes the core story:
 
+- **Runtime scenario builder** — create/modify scenario packs from the
+  dashboard: the generic-orchestrator pattern (both packs are structurally
+  near-identical) makes a config-driven mesh generator feasible — domain
+  fields, policy rules, thresholds, and mock tables in, a governed
+  five-agent mesh out. Today: copy `scenarios/_template` (README walkthrough)
+  and restart; packs are code, which is the honest default.
 - **Budget governance** — per-task and per-agent token/cost caps with hard-stop (task parks when exceeded); makes the KPI panel actionable. The LLM choke-point (`core/llm`) already sees every call, so metering is trivial to add.
 - **Eval runs** — replay the seeded cases against expected routes (auto/human/deny) with pass-rate over time; productizes the NIST *Measure* function.
 - **A2A streaming (SSE)** — live token streaming in the UI using the protocol's streaming transport; today all hops are request/response.

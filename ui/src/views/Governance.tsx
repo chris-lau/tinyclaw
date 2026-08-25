@@ -1,31 +1,131 @@
 import { useEffect, useState } from "react";
 import { api, fmtClock } from "../api";
 
+const DRAFT_PAYLOAD: Record<string, any> = {
+  procurement: { amount: 12400, vendor: { sanctioned: false }, injection_flags: 0 },
+  support: { refund_amount: 180, abuse_flag: false, legal_flag: false, churn_risk: false },
+};
+
 export default function Governance({ tick, scenario }: { tick: number; scenario: string; live: any[] }) {
   const [audit, setAudit] = useState<any[]>([]);
+  const [allAudit, setAllAudit] = useState<any[]>([]);
   const [verify, setVerify] = useState<any>(null);
   const [policies, setPolicies] = useState<any[]>([]);
+  const [filter, setFilter] = useState({ q: "", actor: "", action: "", decision: "" });
+  const [editor, setEditor] = useState<{ scenario: string; yaml: string; version: number | null } | null>(null);
+  const [testResult, setTestResult] = useState<any>(null);
+  const [editorMsg, setEditorMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api.audit(150).then(setAudit).catch(() => {});
+    api.audit(300).then((a) => { setAudit(a); setAllAudit(a); }).catch(() => {});
     api.auditVerify().then(setVerify).catch(() => {});
     api.policies().then(setPolicies).catch(() => {});
+    setTestResult(null);
+    setEditorMsg(null);
   }, [tick]);
+
+  useEffect(() => {
+    api.auditFiltered(filter).then(setAudit).catch(() => {});
+  }, [filter]);
+
+  async function openEditor(scen: string) {
+    setTestResult(null);
+    setEditorMsg(null);
+    try {
+      const s = await api.getPolicySet(scen);
+      setEditor({ scenario: scen, yaml: s.yaml, version: s.version });
+    } catch (e: any) {
+      setEditorMsg(`cannot load policy set: ${e.message}`);
+    }
+  }
+
+  async function savePolicy() {
+    if (!editor) return;
+    setBusy(true);
+    try {
+      const r = await api.putPolicySet(editor.scenario, editor.yaml);
+      setEditorMsg(`saved · v${r.version} · ${r.rules} rules · effective on next evaluation · audited`);
+      const list = await api.policies();
+      setPolicies(list);
+    } catch (e: any) {
+      setEditorMsg(`error: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function testPolicy() {
+    if (!editor) return;
+    try {
+      const r = await api.testPolicySet(editor.scenario, editor.yaml, DRAFT_PAYLOAD[editor.scenario] ?? {});
+      setTestResult(r);
+      setEditorMsg(null);
+    } catch (e: any) {
+      setTestResult(null);
+      setEditorMsg(`error: ${e.message}`);
+    }
+  }
 
   const inScenario = (p: any) => scenario === "all" || p.scenario === scenario;
   // policy rule sets (not risk/identity/hooks): every pack's main policy file
-  const ruleSets = policies.filter((p) => /policies\/(procurement|support)\.yaml$/.test(p.file) && inScenario(p));
+  const ruleSets = policies.filter((p) => p.editable && inScenario(p));
+  const distinct = (key: string) => [...new Set(allAudit.map((a) => a[key]).filter(Boolean))] as string[];
 
   return (
     <div className="gv-grid">
       <div className="gv-col">
         <div className="card gv-card" style={{ flex: 1 }}>
-          <h3 className="sec" style={{ marginBottom: 8 }}>Policy rules (as code)</h3>
+          <h3 className="sec" style={{ marginBottom: 8 }}>
+            Policy rules (as code)
+            {ruleSets.length > 0 && (
+              <button className="btn btn-gh" style={{ float: "right", fontSize: 11, padding: "4px 10px" }}
+                      onClick={() => (editor ? setEditor(null) : openEditor(ruleSets[0].scenario))}>
+                {editor ? "Close editor" : `✎ Edit ${ruleSets[0]?.scenario ?? ""} set`}
+              </button>
+            )}
+          </h3>
+
+          {editor && (
+            <div className="pk-card" style={{ marginBottom: 10 }}>
+              <div className="drow" style={{ paddingBottom: 6 }}>
+                <span className="chip c-blue">{editor.scenario}</span>
+                <span style={{ color: "#8b98a5", fontSize: 11 }}>
+                  v{editor.version} · edits are validated, versioned, audited, and hot-reload on the next evaluation
+                </span>
+              </div>
+              <textarea className="inp ta" style={{ minHeight: 220, width: "100%" }} spellCheck={false}
+                        value={editor.yaml}
+                        onChange={(e) => setEditor({ ...editor, yaml: e.target.value })} />
+              <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <button className="btn btn-gh" onClick={testPolicy}>▶ Test draft</button>
+                <button className="btn btn-g" disabled={busy} onClick={savePolicy}>Save (audited)</button>
+                {ruleSets.length > 1 && (
+                  <select className="inp" style={{ width: "auto", marginLeft: "auto" }}
+                          value={editor.scenario}
+                          onChange={(e) => openEditor(e.target.value)}>
+                    {ruleSets.map((p: any) => <option key={p.scenario}>{p.scenario}</option>)}
+                  </select>
+                )}
+              </div>
+              {testResult && (
+                <div className="drow" style={{ marginTop: 6 }}>
+                  <span className="chip c-blue">dry-run</span>
+                  <span style={{ color: "#c3cdd9", fontSize: 11.5 }}>
+                    {testResult.summary} → <b>{testResult.effect}</b>{testResult.tier ? ` · tier ${testResult.tier}` : ""}
+                  </span>
+                </div>
+              )}
+              {editorMsg && <div style={{ fontSize: 11.5, color: editorMsg.startsWith("error") || editorMsg.startsWith("cannot") ? "#f87171" : "#34d399", marginTop: 6 }}>{editorMsg}</div>}
+            </div>
+          )}
+
           {ruleSets.flatMap((p) =>
             [{ header: p.scenario }].concat((p.yaml?.policies ?? []) as any[]).map((r: any, i: number) =>
               r.header ? (
                 <div key={`${p.scenario}-h`} className="drow" style={{ paddingBottom: 2 }}>
                   <span className="chip c-blue" style={{ fontSize: 9.5 }}>{r.header}</span>
+                  {p.version != null && <span className="chip c-gray" style={{ fontSize: 9.5 }}>v{p.version}</span>}
                 </div>
               ) : (
                 <div className="drow" key={`${p.scenario}-${r.id}-${i}`}>
@@ -75,6 +175,25 @@ export default function Governance({ tick, scenario }: { tick: number; scenario:
               </span>
             )}
           </h3>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+            <input className="inp" style={{ flex: 2, minWidth: 140 }} placeholder="search actor / action / subject / details…"
+                   value={filter.q} onChange={(e) => setFilter({ ...filter, q: e.target.value })} />
+            <select className="inp" style={{ flex: 1, minWidth: 110 }} value={filter.actor}
+                    onChange={(e) => setFilter({ ...filter, actor: e.target.value })}>
+              <option value="">actor: any</option>
+              {distinct("actor").map((a) => <option key={a}>{a}</option>)}
+            </select>
+            <select className="inp" style={{ flex: 1, minWidth: 110 }} value={filter.action}
+                    onChange={(e) => setFilter({ ...filter, action: e.target.value })}>
+              <option value="">action: any</option>
+              {distinct("action").map((a) => <option key={a}>{a}</option>)}
+            </select>
+            <select className="inp" style={{ flex: 1, minWidth: 100 }} value={filter.decision}
+                    onChange={(e) => setFilter({ ...filter, decision: e.target.value })}>
+              <option value="">decision: any</option>
+              {distinct("decision").map((d) => <option key={d}>{d}</option>)}
+            </select>
+          </div>
           {audit.map((a) => (
             <div className="drow" key={a.seq} style={{ gridTemplateColumns: "none", display: "block" }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

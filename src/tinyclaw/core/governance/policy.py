@@ -120,7 +120,13 @@ class PolicyEngine:
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> PolicyEngine:
-        raw = yaml.safe_load(Path(path).read_text()) or {}
+        return cls.from_text(Path(path).read_text())
+
+    @classmethod
+    def from_text(cls, yaml_text: str) -> PolicyEngine:
+        """Compile a policy set from raw YAML — the hot-reload path (editable
+        policy sets live in the gateway DB and agents compile per-evaluation)."""
+        raw = yaml.safe_load(yaml_text) or {}
         rules: list[Rule] = []
         for entry in raw.get("policies", []):
             when = entry.get("when") or {}
@@ -135,6 +141,8 @@ class PolicyEngine:
                     tier=entry.get("tier"),
                 )
             )
+        if not rules:
+            raise ValueError("policy set has no rules")
         return cls(rules, default_effect=Effect(raw.get("default_effect", "allow")))
 
     def evaluate(self, payload: dict[str, Any], posture: str = "balanced") -> PolicyDecision:

@@ -38,13 +38,31 @@ class PolicyExecutor(TinyclawExecutor):
             ),
             settings,
         )
-        self.engine = PolicyEngine.from_yaml(PACK / "policies" / "procurement.yaml")
+        self.pack_file = PACK / "policies" / "procurement.yaml"
+        self.engine = PolicyEngine.from_yaml(self.pack_file)  # fallback; live set comes from the gateway
         self.risk = RiskRouter.from_yaml(PACK / "policies" / "risk.yaml")
+
+    async def _engine(self) -> PolicyEngine:
+        """Hot-reload: the gateway DB holds the editable policy set; recompile
+        per evaluation so edits apply on the very next request. Falls back to
+        the pack file if the gateway is unreachable."""
+        try:
+            async with httpx.AsyncClient(
+                base_url=self.settings.gateway_url,
+                headers={"authorization": f"Bearer {self.settings.internal_token}"},
+                timeout=3.0,
+            ) as http:
+                r = await http.get("/api/policy-sets/procurement")
+                r.raise_for_status()
+                return PolicyEngine.from_text(r.json()["yaml"])
+        except Exception:
+            return self.engine
 
     async def handle(self, request: AgentRequest, updater: TaskUpdater) -> None:
         payload = self._evaluation_payload(request)
         posture = (request.data or {}).get("posture", "balanced")
-        decision = self.engine.evaluate(payload, posture=posture)
+        engine = await self._engine()
+        decision = engine.evaluate(payload, posture=posture)
         tier = decision.tier or 1
         ar = self.risk.classify(ACTION)
         if decision.is_denied:

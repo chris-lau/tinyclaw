@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS agent_defs (
 CREATE TABLE IF NOT EXISTS kv (
   key TEXT PRIMARY KEY, value TEXT
 );
+CREATE TABLE IF NOT EXISTS policy_sets (
+  scenario TEXT PRIMARY KEY, yaml TEXT NOT NULL, version INTEGER,
+  updated_at DOUBLE PRECISION, updated_by TEXT
+);
 """
 
 _SCHEMA_PG = """
@@ -80,6 +84,10 @@ CREATE TABLE IF NOT EXISTS agent_defs (
 );
 CREATE TABLE IF NOT EXISTS kv (
   key TEXT PRIMARY KEY, value TEXT
+);
+CREATE TABLE IF NOT EXISTS policy_sets (
+  scenario TEXT PRIMARY KEY, yaml TEXT NOT NULL, version INTEGER,
+  updated_at DOUBLE PRECISION, updated_by TEXT
 );
 """
 
@@ -345,3 +353,31 @@ class Database:
             "INSERT INTO kv (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
         )
+
+    # -- policy sets (editable, hot-reloaded, audited) --------------------------
+
+    def seed_policy_set(self, scenario: str, yaml_text: str) -> None:
+        """Insert the pack-file default if the scenario has no DB set yet."""
+        with self._lock:
+            self._conn.execute(
+                self._q(
+                    "INSERT INTO policy_sets (scenario, yaml, version, updated_at, updated_by)"
+                    " VALUES (?,?,1,?,NULL) ON CONFLICT(scenario) DO NOTHING"
+                ),
+                (scenario, yaml_text, time.time()),
+            )
+            self._conn.commit()
+
+    def get_policy_set(self, scenario: str) -> dict[str, Any] | None:
+        return self._one("SELECT * FROM policy_sets WHERE scenario = ?", (scenario,))
+
+    def update_policy_set(self, scenario: str, yaml_text: str, updated_by: str) -> dict[str, Any]:
+        current = self.get_policy_set(scenario) or {"version": 0}
+        version = int(current["version"] or 0) + 1
+        self._exec(
+            "INSERT INTO policy_sets (scenario, yaml, version, updated_at, updated_by) VALUES (?,?,?,?,?)"
+            " ON CONFLICT(scenario) DO UPDATE SET yaml=excluded.yaml, version=excluded.version,"
+            " updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+            (scenario, yaml_text, version, time.time(), updated_by),
+        )
+        return self.get_policy_set(scenario) or {}
