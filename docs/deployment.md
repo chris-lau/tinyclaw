@@ -66,6 +66,30 @@ Notes:
 * **Free/starter tier cold starts**: the first request after sleep takes a
   few seconds while the mesh wakes.
 
+### Crashes & redeploys — the operational rulebook
+
+| Event | Records (Postgres) | Parked A2A tasks (SQLite) | Recovery |
+|---|---|---|---|
+| Crash / container exit | preserved | preserved (same filesystem) | Render restarts automatically (~30s) — usually no action needed |
+| Redeploy / rollback (new image) | preserved | **reset** (fresh filesystem) | none needed; see the caveat below |
+
+The one redeploy caveat: an approval that was **pending when the redeploy
+happened** remains visible and decidable (the decision is recorded and
+audited as always), but the resume message finds no task in the
+orchestrator's fresh store — the response carries `resume_error` and the old
+task row stays in `input_required` as a fossil. Harmless; ignore or reject
+the inbox entry. Everything submitted after the redeploy is normal.
+
+Rules of thumb:
+
+1. **Finish pending approvals before redeploying** and this caveat never
+   touches you.
+2. A crash-loop (restarts dying immediately) is a code or memory problem —
+   use Render's **Rollback** to the previous deploy to restore service
+   instantly while you investigate the logs.
+3. To notice crashes when nobody is watching, point a free uptime monitor at
+   `/api/health`.
+
 ## 3. Cloudflare Pages (frontend)
 
 1. Cloudflare dashboard → **Workers & Pages → Create → Pages → Connect to
