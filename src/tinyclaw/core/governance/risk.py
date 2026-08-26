@@ -59,13 +59,20 @@ class RiskRouter:
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> RiskRouter:
-        raw = yaml.safe_load(Path(path).read_text()) or {}
+        return cls.from_text(Path(path).read_text())
+
+    @classmethod
+    def from_text(cls, yaml_text: str) -> RiskRouter:
+        """Compile a risk registry from raw YAML — the hot-reload path."""
+        raw = yaml.safe_load(yaml_text) or {}
         registry = {
             action: ActionRisk(
                 action=action, risk_class=RiskClass(spec["risk_class"]), description=spec.get("description", "")
             )
             for action, spec in raw.get("actions", {}).items()
         }
+        if not registry:
+            raise ValueError("risk registry has no actions")
         return cls(registry)
 
     def classify(self, action: str) -> ActionRisk:

@@ -33,11 +33,14 @@ export const api = {
     if (f.q) p.set("q", f.q);
     return j(`/api/audit?${p.toString()}`);
   },
-  getPolicySet: (scenario: string) => j(`/api/policy-sets/${scenario}`),
-  putPolicySet: (scenario: string, yaml: string) =>
-    j(`/api/policy-sets/${scenario}`, { method: "PUT", body: JSON.stringify({ yaml, updated_by: "dashboard" }) }),
+  getPolicySet: (scenario: string, kind = "policy") => j(`/api/sets/${scenario}/${kind}`),
+  putPolicySet: (scenario: string, yaml: string, kind = "policy") =>
+    j(`/api/sets/${scenario}/${kind}`, { method: "PUT", body: JSON.stringify({ yaml, updated_by: "dashboard" }) }),
   testPolicySet: (scenario: string, yaml: string | null, payload: any, posture = "balanced") =>
-    j(`/api/policy-sets/${scenario}/test`, { method: "POST", body: JSON.stringify({ yaml: yaml ?? undefined, payload, posture }) }),
+    j(`/api/sets/${scenario}/policy/test`, { method: "POST", body: JSON.stringify({ yaml: yaml ?? undefined, payload, posture }) }),
+  getAgentPrompt: (agent: string) => j(`/api/agent-prompts/${agent}`),
+  putAgentPrompt: (agent: string, system_prompt: string) =>
+    j(`/api/agent-prompts/${agent}`, { method: "PUT", body: JSON.stringify({ system_prompt, updated_by: "dashboard" }) }),
   auditVerify: () => j("/api/audit/verify"),
   events: (limit = 120) => j(`/api/events?limit=${limit}`),
   kpis: () => j("/api/kpis"),

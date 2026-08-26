@@ -11,6 +11,7 @@ import json
 import re
 from pathlib import Path
 
+import httpx
 from a2a.server.tasks import TaskUpdater
 from a2a.types import TextPart
 
@@ -41,6 +42,22 @@ class IntakeExecutor(TinyclawExecutor):
             settings,
         )
         self.llm = build_llm(settings.llm_provider, settings.llm_model)
+
+    async def _system_prompt(self) -> str:
+        """Hot prompt override: the gateway DB may carry an edited system
+        prompt (audited, versioned); the code constant is the default."""
+        try:
+            async with httpx.AsyncClient(
+                base_url=self.settings.gateway_url,
+                headers={"authorization": f"Bearer {self.settings.internal_token}"},
+                timeout=3.0,
+            ) as http:
+                r = await http.get("/api/agent-prompts/intake")
+                r.raise_for_status()
+                override = r.json().get("system_prompt")
+                return override or SYSTEM
+        except Exception:
+            return SYSTEM
 
     async def handle(self, request: AgentRequest, updater: TaskUpdater) -> None:
         payload = dict(request.data or {})

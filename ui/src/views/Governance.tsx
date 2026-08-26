@@ -12,10 +12,11 @@ export default function Governance({ tick, scenario }: { tick: number; scenario:
   const [verify, setVerify] = useState<any>(null);
   const [policies, setPolicies] = useState<any[]>([]);
   const [filter, setFilter] = useState({ q: "", actor: "", action: "", decision: "" });
-  const [editor, setEditor] = useState<{ scenario: string; yaml: string; version: number | null } | null>(null);
+  const [editor, setEditor] = useState<{ scenario: string; kind: string; yaml: string; version: number | null } | null>(null);
   const [testResult, setTestResult] = useState<any>(null);
   const [editorMsg, setEditorMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [prompt, setPrompt] = useState<{ agent: string; text: string } | null>(null);
 
   useEffect(() => {
     api.audit(300).then((a) => { setAudit(a); setAllAudit(a); }).catch(() => {});
@@ -29,14 +30,16 @@ export default function Governance({ tick, scenario }: { tick: number; scenario:
     api.auditFiltered(filter).then(setAudit).catch(() => {});
   }, [filter]);
 
-  async function openEditor(scen: string) {
+  const KINDS = ["policy", "risk", "hooks", "identity"];
+
+  async function openEditor(scen: string, kind: string) {
     setTestResult(null);
     setEditorMsg(null);
     try {
-      const s = await api.getPolicySet(scen);
-      setEditor({ scenario: scen, yaml: s.yaml, version: s.version });
+      const s = await api.getPolicySet(scen, kind);
+      setEditor({ scenario: scen, kind, yaml: s.yaml, version: s.version });
     } catch (e: any) {
-      setEditorMsg(`cannot load policy set: ${e.message}`);
+      setEditorMsg(`cannot load set: ${e.message}`);
     }
   }
 
@@ -44,10 +47,34 @@ export default function Governance({ tick, scenario }: { tick: number; scenario:
     if (!editor) return;
     setBusy(true);
     try {
-      const r = await api.putPolicySet(editor.scenario, editor.yaml);
-      setEditorMsg(`saved · v${r.version} · ${r.rules} rules · effective on next evaluation · audited`);
+      const r = await api.putPolicySet(editor.scenario, editor.yaml, editor.kind);
+      const what = r.rules != null ? `${r.rules} rules` : r.actions != null ? `${r.actions} actions` : r.hooks != null ? `${r.hooks} hooks` : `${r.agents} agents`;
+      setEditorMsg(`saved · v${r.version} · ${what} · effective immediately · audited`);
       const list = await api.policies();
       setPolicies(list);
+    } catch (e: any) {
+      setEditorMsg(`error: ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openPrompt(agent: string) {
+    setEditorMsg(null);
+    try {
+      const p = await api.getAgentPrompt(agent);
+      setPrompt({ agent, text: p.system_prompt ?? "" });
+    } catch (e: any) {
+      setEditorMsg(`error: ${e.message}`);
+    }
+  }
+
+  async function savePrompt() {
+    if (!prompt) return;
+    setBusy(true);
+    try {
+      const r = await api.putAgentPrompt(prompt.agent, prompt.text);
+      setEditorMsg(`prompt for ${prompt.agent} saved · v${r.version} · applies to the next request`);
     } catch (e: any) {
       setEditorMsg(`error: ${e.message}`);
     } finally {
@@ -68,8 +95,8 @@ export default function Governance({ tick, scenario }: { tick: number; scenario:
   }
 
   const inScenario = (p: any) => scenario === "all" || p.scenario === scenario;
-  // policy rule sets (not risk/identity/hooks): every pack's main policy file
-  const ruleSets = policies.filter((p) => p.editable && inScenario(p));
+  const ruleSets = policies.filter((p) => p.kind === "policy" && inScenario(p));
+  const scenariosAll = [...new Set(policies.map((p: any) => p.scenario))];
   const distinct = (key: string) => [...new Set(allAudit.map((a) => a[key]).filter(Boolean))] as string[];
 
   return (
@@ -78,35 +105,36 @@ export default function Governance({ tick, scenario }: { tick: number; scenario:
         <div className="card gv-card" style={{ flex: 1 }}>
           <h3 className="sec" style={{ marginBottom: 8 }}>
             Policy rules (as code)
-            {ruleSets.length > 0 && (
+            {policies.length > 0 && (
               <button className="btn btn-gh" style={{ float: "right", fontSize: 11, padding: "4px 10px" }}
-                      onClick={() => (editor ? setEditor(null) : openEditor(ruleSets[0].scenario))}>
-                {editor ? "Close editor" : `✎ Edit ${ruleSets[0]?.scenario ?? ""} set`}
+                      onClick={() => (editor ? setEditor(null) : openEditor(scenariosAll[0] ?? "procurement", "policy"))}>
+                {editor ? "Close editor" : "✎ Edit sets"}
               </button>
             )}
           </h3>
 
           {editor && (
             <div className="pk-card" style={{ marginBottom: 10 }}>
-              <div className="drow" style={{ paddingBottom: 6 }}>
-                <span className="chip c-blue">{editor.scenario}</span>
+              <div className="drow" style={{ paddingBottom: 6, gap: 6 }}>
+                <select className="inp" style={{ width: "auto" }} value={editor.scenario}
+                        onChange={(e) => openEditor(e.target.value, editor.kind)}>
+                  {scenariosAll.map((s: string) => <option key={s}>{s}</option>)}
+                </select>
+                <select className="inp" style={{ width: "auto" }} value={editor.kind}
+                        onChange={(e) => openEditor(editor.scenario, e.target.value)}>
+                  {KINDS.map((k) => <option key={k}>{k}</option>)}
+                </select>
                 <span style={{ color: "#8b98a5", fontSize: 11 }}>
-                  v{editor.version} · edits are validated, versioned, audited, and hot-reload on the next evaluation
+                  v{editor.version} · validated, versioned, audited, hot-applied
+                  {editor.kind === "identity" && " (advisory — scope enforcement is roadmap)"}
                 </span>
               </div>
               <textarea className="inp ta" style={{ minHeight: 220, width: "100%" }} spellCheck={false}
                         value={editor.yaml}
                         onChange={(e) => setEditor({ ...editor, yaml: e.target.value })} />
               <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <button className="btn btn-gh" onClick={testPolicy}>▶ Test draft</button>
+                {editor.kind === "policy" && <button className="btn btn-gh" onClick={testPolicy}>▶ Test draft</button>}
                 <button className="btn btn-g" disabled={busy} onClick={savePolicy}>Save (audited)</button>
-                {ruleSets.length > 1 && (
-                  <select className="inp" style={{ width: "auto", marginLeft: "auto" }}
-                          value={editor.scenario}
-                          onChange={(e) => openEditor(e.target.value)}>
-                    {ruleSets.map((p: any) => <option key={p.scenario}>{p.scenario}</option>)}
-                  </select>
-                )}
               </div>
               {testResult && (
                 <div className="drow" style={{ marginTop: 6 }}>
@@ -137,7 +165,7 @@ export default function Governance({ tick, scenario }: { tick: number; scenario:
             ),
           )}
           <h3 className="sec" style={{ margin: "14px 0 8px" }}>Risk registry</h3>
-          {policies.filter((p) => p.file.endsWith("risk.yaml") && inScenario(p)).map((p) =>
+          {policies.filter((p) => p.kind === "risk" && inScenario(p)).map((p) =>
             Object.entries(p.yaml?.actions ?? {}).map(([name, spec]: any) => (
               <div className="drow" key={`${p.scenario}-${name}`}>
                 {scenario === "all" && <span className="chip c-blue" style={{ fontSize: 9.5, flexShrink: 0 }}>{p.scenario}</span>}
@@ -148,7 +176,7 @@ export default function Governance({ tick, scenario }: { tick: number; scenario:
             )),
           )}
           <h3 className="sec" style={{ margin: "14px 0 8px" }}>Agent identities &amp; scopes</h3>
-          {policies.filter((p) => p.file.endsWith("identity.yaml") && inScenario(p)).map((p) =>
+          {policies.filter((p) => p.kind === "identity" && inScenario(p)).map((p) =>
             Object.entries(p.yaml?.agents ?? {}).map(([name, spec]: any) => (
               <div className="drow" key={`${p.scenario}-${name}`}>
                 <span className="rid">{name}</span>
@@ -159,6 +187,32 @@ export default function Governance({ tick, scenario }: { tick: number; scenario:
               </div>
             )),
           )}
+          <h3 className="sec" style={{ margin: "14px 0 8px" }}>Coded-agent prompts (hot)</h3>
+          <div className="drow" style={{ gap: 8 }}>
+            <span style={{ color: "#8b98a5", flex: 1 }}>
+              the LLM-driven coded agents' system prompts are editable at runtime; orchestration logic stays code by design
+            </span>
+            {["intake", "support-intake"].map((a) => (
+              <button key={a} className="btn btn-gh" style={{ fontSize: 11, padding: "4px 10px" }}
+                      onClick={() => (prompt && prompt.agent === a ? setPrompt(null) : openPrompt(a))}>
+                {prompt && prompt.agent === a ? "close" : `✎ ${a}`}
+              </button>
+            ))}
+          </div>
+          {prompt && (
+            <div className="pk-card" style={{ marginTop: 8 }}>
+              <div className="drow" style={{ paddingBottom: 6 }}>
+                <span className="chip c-blue">{prompt.agent}</span>
+                <span style={{ color: "#8b98a5", fontSize: 11 }}>empty = the code default</span>
+              </div>
+              <textarea className="inp ta" style={{ minHeight: 130, width: "100%" }} spellCheck={false}
+                        value={prompt.text} onChange={(e) => setPrompt({ ...prompt, text: e.target.value })} />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button className="btn btn-g" disabled={busy} onClick={savePrompt}>Save (audited)</button>
+              </div>
+            </div>
+          )}
+          {editorMsg && !editor && <div style={{ fontSize: 11.5, color: editorMsg.startsWith("error") ? "#f87171" : "#34d399", marginTop: 6 }}>{editorMsg}</div>}
           <div style={{ marginTop: 12, fontSize: 10.5, color: "#5d6b7a", lineHeight: 1.5 }}>
             Controls map to NIST AI RMF (GOVERN/MAP/MEASURE/MANAGE) and EU AI Act Art. 12 (logging) &amp; Art. 14 (human oversight) — see docs/governance.md.
           </div>

@@ -62,8 +62,10 @@ def test_create_update_and_validation(tmp_path: Path) -> None:
 
 def test_delete_blocked_while_bound(tmp_path: Path) -> None:
     with make_client(tmp_path) as c:
-        c.post("/api/studio/tools", json={"name": "crm.lookup", "kind": "mock",
-                                          "config": {"response": "account ACME"}, "high_risk": False})
+        c.post(
+            "/api/studio/tools",
+            json={"name": "crm.lookup", "kind": "mock", "config": {"response": "account ACME"}, "high_risk": False},
+        )
         c.post("/api/studio/agents", json={"name": "crm-agent", "system_prompt": "x", "tools": ["crm.lookup"]})
         r = c.delete("/api/studio/tools/crm.lookup")
         assert r.status_code == 409

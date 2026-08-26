@@ -64,7 +64,13 @@ class HookEngine:
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> HookEngine:
-        raw = yaml.safe_load(Path(path).read_text()) or {}
+        return cls.from_text(Path(path).read_text())
+
+    @classmethod
+    def from_text(cls, yaml_text: str) -> HookEngine:
+        """Compile boundary hooks from raw YAML — the hot-reload path (the
+        gateway rebuilds the engine from its DB config sets per evaluation)."""
+        raw = yaml.safe_load(yaml_text) or {}
         hooks: list[HookRule] = []
         for entry in raw.get("hooks", []):
             when = entry.get("when") or {}
@@ -78,6 +84,8 @@ class HookEngine:
                     when=cond,
                 )
             )
+        if not hooks:
+            raise ValueError("hook set has no rules")
         return cls(hooks)
 
     def evaluate(self, text: str, data: dict[str, Any] | None = None) -> HookDecision:

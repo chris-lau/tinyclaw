@@ -76,20 +76,24 @@ class GatewayState:
         self.subscribers: list[asyncio.Queue[dict[str, Any]]] = []
         self.scenarios = load_scenarios()
         self.callers: dict[str, A2ACaller] = {}
-        # Boundary hooks (Phase 2): every scenario pack may ship hooks.yaml;
-        # the gateway evaluates them, the A2A clients enforce them.
+        # Boundary hooks (Phase 2): the gateway evaluates them, the A2A
+        # clients enforce them. The file seeds the DB config set once; after
+        # that the DB is the source of truth and hook_engine() rebuilds
+        # per evaluation (hot-reload).
         self.hooks: list[HookEngine] = []
         for scen in self.scenarios.values():
             for rel in scen.get("policies", []):
                 path = scen["dir"] / rel
-                if path.name == "hooks.yaml" and path.exists():
+                if not path.exists():
+                    continue
+                kind = {"hooks.yaml": "hooks", "risk.yaml": "risk", "identity.yaml": "identity"}.get(path.name)
+                if kind is None and path.stem == scen["name"]:
+                    kind = "policy"  # convention: policies/<scenario>.yaml is the rule set
+                if kind is None:
+                    continue
+                self.db.seed_config_set(scen["name"], kind, path.read_text())
+                if kind == "hooks":
                     self.hooks.append(HookEngine.from_yaml(path))
-                # Editable policy sets: the pack file seeds the DB once; after
-                # that the DB is the source of truth (hot-reload + audit + it
-                # survives redeploys, which ephemeral container files don't).
-                # Convention: policies/<scenario-name>.yaml is the editable set.
-                if path.stem == scen["name"] and path.exists():
-                    self.db.seed_policy_set(scen["name"], path.read_text())
 
         # Tool registry: default catalog seeds the DB once; the registry is
         # the source of truth afterwards (configurable, executable, audited).
@@ -134,7 +138,21 @@ class GatewayState:
             self.db.seed_tool(*tool)
 
     def hook_engine(self):
-        """All pack hooks merged (evaluated in declaration order)."""
+        """All packs' hooks merged, rebuilt from the DB config sets on every
+        evaluation (edits hot-apply); falls back to the pack-file engines
+        compiled at boot if a DB set is missing or unreadable."""
+        from ..core.governance.hooks import HookEngine
+
+        engines: list[HookEngine] = []
+        for scen in self.scenarios:
+            row = self.db.get_config_set(scen, "hooks")
+            if row:
+                try:
+                    engines.append(HookEngine.from_text(row["yaml"]))
+                except Exception:
+                    pass  # fall back to the boot-time file engine below
+        if engines:
+            return HookEngine([h for e in engines for h in e.hooks])
         return self._hook_engine_cls([h for engine in self.hooks for h in engine.hooks])
 
     def posture(self) -> str:
@@ -714,112 +732,161 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/policies")
     async def policies() -> list[dict[str, Any]]:
-        """Policy metadata — the editable sets come from the DB (source of
-        truth after seeding), risk/identity/hooks remain pack files."""
+        """All governance sets (policy/risk/hooks/identity), read from the DB
+        config sets — the source of truth after seeding."""
         out: list[dict[str, Any]] = []
-        db_sets = {s["scenario"]: s for s in _all_policy_sets(gw())}
-        for scen in gw().scenarios.values():
-            for rel in scen.get("policies", []):
-                path: Path = scen["dir"] / rel
-                set_row = db_sets.get(scen["name"]) if path.stem == scen["name"] else None
-                source: dict[str, Any] | None = None
-                if set_row is not None:
-                    source = yaml.safe_load(set_row["yaml"])
-                elif path.exists():
-                    source = yaml.safe_load(path.read_text())
-                if source is not None:
-                    out.append(
-                        {
-                            "scenario": scen["name"],
-                            "file": rel,
-                            "yaml": source,
-                            "editable": set_row is not None,
-                            "version": set_row["version"] if set_row else None,
-                            "updated_by": set_row["updated_by"] if set_row else None,
-                        }
-                    )
+        file_rel = {
+            "policy": "policies/{scen}.yaml",
+            "risk": "policies/risk.yaml",
+            "hooks": "policies/hooks.yaml",
+            "identity": "policies/identity.yaml",
+        }
+        for row in gw().db.list_config_sets():
+            if row["scenario"] not in gw().scenarios:
+                continue
+            out.append(
+                {
+                    "scenario": row["scenario"],
+                    "kind": row["kind"],
+                    "file": file_rel.get(row["kind"], "").format(scen=row["scenario"]),
+                    "yaml": yaml.safe_load(row["yaml"]),
+                    "editable": True,
+                    "version": row["version"],
+                    "updated_by": row["updated_by"],
+                }
+            )
         return out
 
-    # ------------------------------------------------- editable policy sets
+    # ------------------------------------------- editable config sets (all kinds)
 
-    def _all_policy_sets(gw_state: GatewayState) -> list[dict[str, Any]]:
-        out = []
-        for scen in gw_state.scenarios:
-            row = gw_state.db.get_policy_set(scen)
-            if row:
-                out.append(row)
-        return out
+    SET_KINDS = ("policy", "risk", "hooks", "identity")
 
-    def _require_policy_scenario(scenario: str) -> None:
+    def _require_set(scenario: str, kind: str) -> None:
         if scenario not in gw().scenarios:
             raise HTTPException(404, f"unknown scenario {scenario!r}")
-        if gw().db.get_policy_set(scenario) is None:
-            raise HTTPException(404, f"scenario {scenario!r} has no editable policy set")
+        if kind not in SET_KINDS:
+            raise HTTPException(404, f"unknown set kind {kind!r}; expected one of {SET_KINDS}")
+        if gw().db.get_config_set(scenario, kind) is None:
+            raise HTTPException(404, f"no {kind} set for scenario {scenario!r}")
 
-    @app.get("/api/policy-sets/{scenario}")
-    async def get_policy_set(scenario: str) -> dict[str, Any]:
-        _require_policy_scenario(scenario)
-        row = gw().db.get_policy_set(scenario)
+    def _compile_set(kind: str, yaml_text: str) -> dict[str, Any]:
+        """Kind-aware validation; returns summary metadata for the audit entry."""
+        from ..core.governance.hooks import HookEngine
+        from ..core.governance.policy import PolicyEngine
+        from ..core.governance.risk import RiskRouter
+
+        try:
+            if kind == "policy":
+                engine = PolicyEngine.from_text(yaml_text)
+                return {"rules": len(engine.rules)}
+            if kind == "risk":
+                router = RiskRouter.from_text(yaml_text)
+                return {"actions": len(router.registry)}
+            if kind == "hooks":
+                engine_h = HookEngine.from_text(yaml_text)
+                return {"hooks": len(engine_h.hooks)}
+            # identity: advisory today (scopes aren't enforced at runtime) —
+            # shape check only: mapping of agents with scope lists.
+            parsed = yaml.safe_load(yaml_text) or {}
+            agents = parsed.get("agents")
+            if not isinstance(agents, dict) or not agents:
+                raise ValueError("identity set must be a mapping with an 'agents' block")
+            return {"agents": len(agents)}
+        except yaml.YAMLError as exc:
+            raise HTTPException(422, f"invalid YAML: {exc}") from exc
+        except Exception as exc:
+            raise HTTPException(422, f"{kind} set failed to compile: {exc}") from exc
+
+    @app.get("/api/sets/{scenario}/{kind}")
+    async def get_set(scenario: str, kind: str) -> dict[str, Any]:
+        _require_set(scenario, kind)
+        row = gw().db.get_config_set(scenario, kind)
         return {
             "scenario": scenario,
+            "kind": kind,
             "yaml": row["yaml"],
             "version": row["version"],
             "updated_by": row["updated_by"],
             "updated_at": row["updated_at"],
         }
 
-    @app.put("/api/policy-sets/{scenario}")
-    async def put_policy_set(scenario: str, body: dict[str, Any]) -> dict[str, Any]:
-        """Edit the scenario's policy set. Validated server-side, versioned,
-        audited, and effective on the next evaluation (agents read per-eval)."""
-        _require_policy_scenario(scenario)
-        yaml_text = body.get("yaml", "")
-        updated_by = body.get("updated_by", "dashboard")
-        try:
-            parsed = yaml.safe_load(yaml_text)
-        except yaml.YAMLError as exc:
-            raise HTTPException(422, f"invalid YAML: {exc}") from exc
-        if not isinstance(parsed, dict) or not isinstance(parsed.get("policies", []), list):
-            raise HTTPException(422, "policy set must be a mapping with a 'policies' list")
-        from ..core.governance.policy import PolicyEngine
-
-        try:
-            engine = PolicyEngine.from_text(yaml_text)
-        except Exception as exc:
-            raise HTTPException(422, f"policy set failed to compile: {exc}") from exc
-        if not engine.rules:
-            raise HTTPException(422, "policy set has no rules")
-
-        row = gw().db.update_policy_set(scenario, yaml_text, updated_by)
+    @app.put("/api/sets/{scenario}/{kind}")
+    async def put_set(scenario: str, kind: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Edit any governance set. Validated by kind, versioned, audited,
+        hot-applied: policy/risk on the agents' next evaluation, hooks on the
+        gateway's next boundary check. Identity is advisory (display +
+        documentation) until scope enforcement ships."""
+        _require_set(scenario, kind)
+        meta = _compile_set(kind, body.get("yaml", ""))
+        row = gw().db.update_config_set(scenario, kind, body.get("yaml", ""), body.get("updated_by", "dashboard"))
         await gw().audit(
-            f"human:{updated_by}", "policy.update", scenario, f"v{row['version']}", rules=len(engine.rules)
+            f"human:{body.get('updated_by', 'dashboard')}",
+            "config.update",
+            f"{scenario}/{kind}",
+            f"v{row['version']}",
+            **meta,
         )
         await gw().broadcast(
             {
                 "id": uuid.uuid4().hex[:8],
                 "ts": time.time(),
-                "type": "policy.updated",
+                "type": "config.updated",
                 "agent": "gateway",
-                "data": {"scenario": scenario, "version": row["version"]},
+                "data": {"scenario": scenario, "kind": kind, "version": row["version"]},
             }
         )
-        return {"scenario": scenario, "version": row["version"], "rules": len(engine.rules)}
+        return {"scenario": scenario, "kind": kind, "version": row["version"], **meta}
 
-    @app.post("/api/policy-sets/{scenario}/test")
-    async def test_policy_set(scenario: str, body: dict[str, Any]) -> dict[str, Any]:
-        """Dry-run: evaluate a draft (or the saved set) against a sample payload."""
+    @app.post("/api/sets/{scenario}/policy/test")
+    async def test_set(scenario: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Dry-run: evaluate a policy draft (or the saved set) against a sample payload."""
         from ..core.governance.policy import PolicyEngine
 
         yaml_text = body.get("yaml")
         if yaml_text is None:
-            _require_policy_scenario(scenario)
-            yaml_text = gw().db.get_policy_set(scenario)["yaml"]
+            _require_set(scenario, "policy")
+            yaml_text = gw().db.get_config_set(scenario, "policy")["yaml"]
         try:
             engine = PolicyEngine.from_text(yaml_text)
         except Exception as exc:
             raise HTTPException(422, f"policy set failed to compile: {exc}") from exc
         d = engine.evaluate(body.get("payload", {}), posture=body.get("posture", "balanced"))
         return {"effect": d.effect.value, "tier": d.tier, "hits": [h.rule.id for h in d.hits], "summary": d.summary()}
+
+    # ----------------------------- coded-agent system-prompt overrides (hot)
+
+    CODED_PROMPT_AGENTS = ("intake", "support-intake")  # the LLM-driven coded agents
+
+    @app.get("/api/agent-prompts/{agent}")
+    async def get_prompt(agent: str) -> dict[str, Any]:
+        if agent not in CODED_PROMPT_AGENTS:
+            raise HTTPException(404, f"no editable prompt for {agent!r}; editable: {list(CODED_PROMPT_AGENTS)}")
+        row = gw().db.get_agent_prompt(agent)
+        return {
+            "agent": agent,
+            "system_prompt": row["system_prompt"] if row else None,
+            "version": row["version"] if row else 0,
+        }
+
+    @app.put("/api/agent-prompts/{agent}")
+    async def put_prompt(agent: str, body: dict[str, Any]) -> dict[str, Any]:
+        if agent not in CODED_PROMPT_AGENTS:
+            raise HTTPException(404, f"no editable prompt for {agent!r}; editable: {list(CODED_PROMPT_AGENTS)}")
+        prompt = str(body.get("system_prompt", "")).strip()
+        if not prompt:
+            raise HTTPException(422, "system_prompt must not be empty")
+        row = gw().db.upsert_agent_prompt(agent, prompt, body.get("updated_by", "dashboard"))
+        await gw().audit(f"human:{body.get('updated_by', 'dashboard')}", "prompt.update", agent, f"v{row['version']}")
+        await gw().broadcast(
+            {
+                "id": uuid.uuid4().hex[:8],
+                "ts": time.time(),
+                "type": "config.updated",
+                "agent": "gateway",
+                "data": {"agent": agent, "kind": "prompt", "version": row["version"]},
+            }
+        )
+        return {"agent": agent, "version": row["version"]}
 
     @app.post("/api/playground/submit")
     async def playground_submit(body: dict[str, Any]) -> list[dict[str, Any]]:

@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS policy_sets (
   scenario TEXT PRIMARY KEY, yaml TEXT NOT NULL, version INTEGER,
   updated_at DOUBLE PRECISION, updated_by TEXT
 );
+CREATE TABLE IF NOT EXISTS config_sets (
+  scenario TEXT, kind TEXT, yaml TEXT NOT NULL, version INTEGER,
+  updated_at DOUBLE PRECISION, updated_by TEXT, PRIMARY KEY (scenario, kind)
+);
+CREATE TABLE IF NOT EXISTS agent_prompts (
+  agent TEXT PRIMARY KEY, system_prompt TEXT NOT NULL,
+  version INTEGER, updated_at DOUBLE PRECISION, updated_by TEXT
+);
 CREATE TABLE IF NOT EXISTS tools (
   name TEXT PRIMARY KEY, description TEXT, kind TEXT, config TEXT,
   high_risk INTEGER, version INTEGER, created_by TEXT, updated_at DOUBLE PRECISION
@@ -92,6 +100,14 @@ CREATE TABLE IF NOT EXISTS kv (
 CREATE TABLE IF NOT EXISTS policy_sets (
   scenario TEXT PRIMARY KEY, yaml TEXT NOT NULL, version INTEGER,
   updated_at DOUBLE PRECISION, updated_by TEXT
+);
+CREATE TABLE IF NOT EXISTS config_sets (
+  scenario TEXT, kind TEXT, yaml TEXT NOT NULL, version INTEGER,
+  updated_at DOUBLE PRECISION, updated_by TEXT, PRIMARY KEY (scenario, kind)
+);
+CREATE TABLE IF NOT EXISTS agent_prompts (
+  agent TEXT PRIMARY KEY, system_prompt TEXT NOT NULL,
+  version INTEGER, updated_at DOUBLE PRECISION, updated_by TEXT
 );
 CREATE TABLE IF NOT EXISTS tools (
   name TEXT PRIMARY KEY, description TEXT, kind TEXT, config TEXT,
@@ -434,3 +450,51 @@ class Database:
             cur = self._conn.execute(self._q("DELETE FROM tools WHERE name = ?"), (name,))
             self._conn.commit()
         return bool(cur.rowcount)
+
+    # -- config sets (policy / risk / hooks / identity per scenario) ------------
+
+    def seed_config_set(self, scenario: str, kind: str, yaml_text: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                self._q(
+                    "INSERT INTO config_sets (scenario, kind, yaml, version, updated_at, updated_by)"
+                    " VALUES (?,?,?,1,?,NULL) ON CONFLICT(scenario, kind) DO NOTHING"
+                ),
+                (scenario, kind, yaml_text, time.time()),
+            )
+            self._conn.commit()
+
+    def get_config_set(self, scenario: str, kind: str) -> dict[str, Any] | None:
+        return self._one("SELECT * FROM config_sets WHERE scenario = ? AND kind = ?", (scenario, kind))
+
+    def list_config_sets(self, scenario: str | None = None) -> list[dict[str, Any]]:
+        if scenario:
+            return self._all("SELECT * FROM config_sets WHERE scenario = ? ORDER BY kind", (scenario,))
+        return self._all("SELECT * FROM config_sets ORDER BY scenario, kind")
+
+    def update_config_set(self, scenario: str, kind: str, yaml_text: str, updated_by: str) -> dict[str, Any]:
+        current = self.get_config_set(scenario, kind) or {"version": 0}
+        version = int(current["version"] or 0) + 1
+        self._exec(
+            "INSERT INTO config_sets (scenario, kind, yaml, version, updated_at, updated_by) VALUES (?,?,?,?,?,?)"
+            " ON CONFLICT(scenario, kind) DO UPDATE SET yaml=excluded.yaml, version=excluded.version,"
+            " updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+            (scenario, kind, yaml_text, version, time.time(), updated_by),
+        )
+        return self.get_config_set(scenario, kind) or {}
+
+    # -- system-prompt overrides for coded LLM agents ---------------------------
+
+    def get_agent_prompt(self, agent: str) -> dict[str, Any] | None:
+        return self._one("SELECT * FROM agent_prompts WHERE agent = ?", (agent,))
+
+    def upsert_agent_prompt(self, agent: str, system_prompt: str, updated_by: str) -> dict[str, Any]:
+        current = self.get_agent_prompt(agent) or {"version": 0}
+        version = int(current["version"] or 0) + 1
+        self._exec(
+            "INSERT INTO agent_prompts (agent, system_prompt, version, updated_at, updated_by) VALUES (?,?,?,?,?)"
+            " ON CONFLICT(agent) DO UPDATE SET system_prompt=excluded.system_prompt, version=excluded.version,"
+            " updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+            (agent, system_prompt, version, time.time(), updated_by),
+        )
+        return self.get_agent_prompt(agent) or {}

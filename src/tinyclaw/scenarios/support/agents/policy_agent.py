@@ -43,19 +43,34 @@ class SupportPolicyExecutor(TinyclawExecutor):
                 headers={"authorization": f"Bearer {self.settings.internal_token}"},
                 timeout=3.0,
             ) as http:
-                r = await http.get("/api/policy-sets/support")
+                r = await http.get("/api/sets/support/policy")
                 r.raise_for_status()
                 return PolicyEngine.from_text(r.json()["yaml"])
         except Exception:
             return self.engine
 
+    async def _router(self) -> RiskRouter:
+        """Hot-reload the risk registry the same way as the policy set."""
+        try:
+            async with httpx.AsyncClient(
+                base_url=self.settings.gateway_url,
+                headers={"authorization": f"Bearer {self.settings.internal_token}"},
+                timeout=3.0,
+            ) as http:
+                r = await http.get("/api/sets/support/risk")
+                r.raise_for_status()
+                return RiskRouter.from_text(r.json()["yaml"])
+        except Exception:
+            return self.risk
+
     async def handle(self, request: AgentRequest, updater: TaskUpdater) -> None:
         payload = self._evaluation_payload(request)
         posture = (request.data or {}).get("posture", "balanced")
         engine = await self._engine()
+        router = await self._router()
         decision = engine.evaluate(payload, posture=posture)
         tier = decision.tier or 1
-        ar = self.risk.classify(ACTION)
+        ar = router.classify(ACTION)
         if decision.is_denied:
             route = RiskDecision(Route.DENY, ar.risk_class, tier, decision.summary())
         elif decision.effect is Effect.ALLOW and ar.risk_class in (RiskClass.AUTO, RiskClass.THRESHOLD):
